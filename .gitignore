@@ -1,0 +1,24 @@
+# Секреты и личные настройки
+.env
+.env.*
+!.env.example
+CLAUDE.local.md
+
+# Локальные копии чужих статей
+fixtures/local/
+
+# Зависимости и сборка
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Локальные данные сервера
+data/
+*.sqlite
+*.sqlite-*
+*.db
+
+# Системное
+.DS_Store
+*.log
