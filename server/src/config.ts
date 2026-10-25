@@ -8,8 +8,10 @@ export interface Config {
   /** Кто выделяет и проверяет утверждения: Gemini с Google Search или локальная Ollama с Ollama Web Search. */
   provider: Provider;
   geminiApiKey: string | null;
-  /** Активная модель выбранного провайдера. */
+  /** Модель провайдера из .env (значение по умолчанию; на странице настроек можно выбрать другую). */
   model: string;
+  geminiModel: string;
+  ollamaModel: string;
   /** Адрес локальной Ollama (не путать с OLLAMA_HOST самой Ollama, у которого другой формат). */
   ollamaUrl: string;
   ollamaApiKey: string | null;
@@ -24,7 +26,8 @@ export interface Config {
   dbPath: string;
   /** Разрешённые Origin расширения (`chrome-extension://<id>`). */
   allowedOrigins: string[];
-  checkConcurrency: number;
+  /** CHECK_CONCURRENCY из .env; null — по умолчанию для провайдера (2 для Gemini, 1 для Ollama). */
+  checkConcurrency: number | null;
   maxBodyBytes: number;
   /** Символов текста статьи на один запрос извлечения утверждений. */
   chunkChars: number;
@@ -68,6 +71,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     provider: p,
     geminiApiKey: env.GEMINI_API_KEY?.trim() || null,
     model: p === "ollama" ? env.OLLAMA_MODEL?.trim() || "qwen3:14b" : env.GEMINI_MODEL?.trim() || "gemini-3.8-flash",
+    geminiModel: env.GEMINI_MODEL?.trim() || "gemini-3.8-flash",
+    ollamaModel: env.OLLAMA_MODEL?.trim() || "qwen3:14b",
     ollamaUrl: localUrl("OLLAMA_URL", env.OLLAMA_URL, "http://127.0.0.1:11434"),
     ollamaApiKey: env.OLLAMA_API_KEY?.trim() || null,
     ollamaNumCtx: int(env.OLLAMA_NUM_CTX, 16384, 2048, 262144),
@@ -79,7 +84,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     allowedOrigins: env.ALLOWED_ORIGINS?.trim()
       ? env.ALLOWED_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)
       : [DEFAULT_EXTENSION_ORIGIN],
-    checkConcurrency: int(env.CHECK_CONCURRENCY, p === "ollama" ? 1 : 2, 1, 8),
+    checkConcurrency: env.CHECK_CONCURRENCY?.trim() ? int(env.CHECK_CONCURRENCY, 2, 1, 8) : null,
     maxBodyBytes: int(env.MAX_BODY_BYTES, 2_000_000, 10_000, 20_000_000),
     chunkChars: int(env.CLAIM_CHUNK_CHARS, 8000, 1000, 100_000),
   };

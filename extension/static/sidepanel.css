@@ -11,7 +11,7 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-.top { padding: 12px 16px 0; }
+.top { padding: 12px 16px 0; display: flex; align-items: center; justify-content: space-between; }
 .top h1 { font-size: 16px; margin: 0; }
 main { padding: 8px 16px 24px; }
 h2 { font-size: 15px; margin: 8px 0 6px; }

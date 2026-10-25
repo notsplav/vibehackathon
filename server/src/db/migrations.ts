@@ -96,4 +96,10 @@ export const MIGRATIONS: Migration[] = [
     // в том числе после перезапуска сервера.
     sql: `ALTER TABLE claims ADD COLUMN search_queries_json TEXT NOT NULL DEFAULT '[]';`,
   },
+  {
+    version: 5,
+    name: "settings",
+    // Настройки со страницы расширения; поверх значений по умолчанию из .env. Ключи API сюда не пишутся.
+    sql: `CREATE TABLE settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at TEXT NOT NULL);`,
+  },
 ];

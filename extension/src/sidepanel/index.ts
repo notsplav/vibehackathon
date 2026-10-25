@@ -3,7 +3,7 @@
 
 import type { AnalysisState, ArticleMetadata, Claim, ExtractedArticle, HealthResponse, SourcedValue } from "../../../shared/contract.ts";
 import { LABELS, displayState } from "../labels.ts";
-import type { ExtractReply, PanelMessage, RenderReply } from "../messages.ts";
+import { type ExtractReply, type PanelMessage, type RenderReply, SETTINGS_CHANGED } from "../messages.ts";
 import { ApiError, api } from "./api.ts";
 import { type IconName, icon } from "./icons.ts";
 import { liveStep, renderProgress, tick } from "./progress.ts";
@@ -371,6 +371,22 @@ function render(): void {
   }
   root.replaceChildren(...children.filter((c): c is Node => c !== null));
 }
+
+// Шестерёнка в шапке открывает нативную страницу настроек расширения.
+const settingsButton = document.getElementById("open-settings");
+if (settingsButton) {
+  settingsButton.append(icon(document, "settings"));
+  settingsButton.addEventListener("click", () => void chrome.runtime.openOptionsPage());
+}
+// После сохранения настроек обновляем подпись «Модель / Поиск» и предупреждения.
+chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
+  if (msg?.type === SETTINGS_CHANGED) {
+    api.health().then(
+      (health) => ((view.health = health), render()),
+      () => undefined,
+    );
+  }
+});
 
 // Таймеры и «обновлено N с назад» меняются каждую секунду без перерисовки всей панели.
 setInterval(() => tick(root), 1000);
