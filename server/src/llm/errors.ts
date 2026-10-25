@@ -17,13 +17,16 @@ export class ModelError extends Error {
   readonly kind: ModelErrorKind;
   readonly status: number | null;
   readonly retryAfterMs: number | null;
+  /** Готовый текст для пользователя, если общий по виду ошибки не подходит (например, «SearXNG не запущен»). */
+  readonly userText: string | null;
 
-  constructor(kind: ModelErrorKind, message: string, status: number | null = null, retryAfterMs: number | null = null) {
+  constructor(kind: ModelErrorKind, message: string, status: number | null = null, retryAfterMs: number | null = null, userText: string | null = null) {
     super(message);
     this.name = "ModelError";
     this.kind = kind;
     this.status = status;
     this.retryAfterMs = retryAfterMs;
+    this.userText = userText;
   }
 
   get retryable(): boolean {

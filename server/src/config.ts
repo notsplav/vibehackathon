@@ -14,6 +14,13 @@ export interface Config {
   ollamaUrl: string;
   ollamaApiKey: string | null;
   ollamaNumCtx: number;
+  /** Поиск источников для провайдера Ollama: локальный SearXNG или Ollama Web Search. */
+  searchProvider: "searxng" | "ollama";
+  searxngUrl: string;
+  /** Поисковых запросов на одно утверждение (провайдер Ollama). */
+  searchQueriesPerClaim: number;
+  /** Сколько часов результат проверки утверждения можно переиспользовать для такого же утверждения; 0 — не переиспользовать. */
+  claimReuseHours: number;
   dbPath: string;
   /** Разрешённые Origin расширения (`chrome-extension://<id>`). */
   allowedOrigins: string[];
@@ -41,10 +48,16 @@ function provider(value: string | undefined): Provider {
   return v;
 }
 
-function localUrl(value: string | undefined, fallback: string): string {
+function localUrl(name: string, value: string | undefined, fallback: string): string {
   const url = new URL(value?.trim() || fallback);
-  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`Некорректный OLLAMA_URL: ${value}`);
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`Некорректный ${name}: ${value}`);
   return url.origin;
+}
+
+function searchProvider(value: string | undefined): "searxng" | "ollama" {
+  const v = (value ?? "").trim().toLowerCase() || "searxng";
+  if (v !== "searxng" && v !== "ollama") throw new Error(`SEARCH_PROVIDER должен быть searxng или ollama, а не «${value}»`);
+  return v;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -55,9 +68,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     provider: p,
     geminiApiKey: env.GEMINI_API_KEY?.trim() || null,
     model: p === "ollama" ? env.OLLAMA_MODEL?.trim() || "qwen3:14b" : env.GEMINI_MODEL?.trim() || "gemini-3.8-flash",
-    ollamaUrl: localUrl(env.OLLAMA_URL, "http://127.0.0.1:11434"),
+    ollamaUrl: localUrl("OLLAMA_URL", env.OLLAMA_URL, "http://127.0.0.1:11434"),
     ollamaApiKey: env.OLLAMA_API_KEY?.trim() || null,
     ollamaNumCtx: int(env.OLLAMA_NUM_CTX, 16384, 2048, 262144),
+    searchProvider: searchProvider(env.SEARCH_PROVIDER),
+    searxngUrl: localUrl("SEARXNG_URL", env.SEARXNG_URL, "http://127.0.0.1:8888"),
+    searchQueriesPerClaim: int(env.SEARCH_QUERIES_PER_CLAIM, 2, 1, 5),
+    claimReuseHours: int(env.CLAIM_REUSE_HOURS, 24, 0, 24 * 30),
     dbPath: env.DB_PATH?.trim() || "data/factcheck.sqlite",
     allowedOrigins: env.ALLOWED_ORIGINS?.trim()
       ? env.ALLOWED_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)

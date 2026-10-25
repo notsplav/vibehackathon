@@ -15,6 +15,9 @@
     "start:server": "npm run start -w server",
     "probe:gemini": "npm run probe:gemini -w server",
     "probe:ollama": "npm run probe:ollama -w server",
+    "searxng:up": "npm run searxng:up -w server",
+    "searxng:down": "npm run searxng:down -w server",
+    "searxng:status": "npm run searxng:status -w server",
     "typecheck": "tsc -p shared && tsc -p extension && tsc -p server",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"

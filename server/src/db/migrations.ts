@@ -79,4 +79,14 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX analyses_cache_engine ON analyses (cache_url, text_hash, algorithm_version, engine);
     `,
   },
+  {
+    version: 3,
+    name: "claim_reuse",
+    // Одинаковое утверждение, уже проверенное той же моделью, не проверяется повторно (кроме «Повторить анализ»).
+    sql: `
+      ALTER TABLE claims ADD COLUMN claim_key TEXT NOT NULL DEFAULT '';
+      CREATE INDEX claims_reuse ON claims (claim_key, status, checked_at);
+      ALTER TABLE analyses ADD COLUMN fresh INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];

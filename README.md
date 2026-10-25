@@ -16,17 +16,21 @@ npm run dev:server        # сервер на http://127.0.0.1:8787
 npm run build:extension   # сборка в extension/dist
 ```
 
-### Вариант без Gemini: локальная модель Ollama
+### Вариант без Gemini: локальная модель Ollama и SearXNG
 
-Модель работает на вашем компьютере, в интернет уходят только поисковые запросы (Ollama Web Search). Источники берутся из результатов поиска, а не из текста модели.
+Модель работает на вашем компьютере. Источники ищет локальный метапоиск SearXNG в Docker: ключи и лимиты API не нужны. Ссылки для вердиктов берутся только из результатов поиска, а не из текста модели.
 
 ```sh
-ollama serve                 # если Ollama ещё не запущена
-ollama pull qwen3:14b        # около 9 ГБ
-# в .env: LLM_PROVIDER=ollama и OLLAMA_API_KEY=<ключ с https://ollama.com/settings/keys>
-npm run probe:ollama         # проверка модели и поиска
+brew install --cask orbstack   # Docker, если его ещё нет; затем откройте OrbStack
+ollama serve                   # если Ollama ещё не запущена
+ollama pull qwen3:14b          # около 9 ГБ
+npm run searxng:up             # SearXNG на http://127.0.0.1:8888
+# в .env: LLM_PROVIDER=ollama
+npm run probe:ollama           # проверка модели и поиска
 npm run dev:server
 ```
+
+На каждое утверждение тратится 2 поисковых запроса (`SEARCH_QUERIES_PER_CLAIM`). Одинаковые утверждения, уже проверенные той же моделью за последние 24 часа, повторно не проверяются; «Повторить анализ» проверяет заново. Вместо SearXNG можно использовать Ollama Web Search: `SEARCH_PROVIDER=ollama` и `OLLAMA_API_KEY`.
 
 В Chrome откройте `chrome://extensions`, включите режим разработчика, нажмите «Загрузить распакованное расширение» и выберите `extension/dist`. Затем откройте статью и нажмите на значок расширения. В боковой панели запустите анализ.
 
