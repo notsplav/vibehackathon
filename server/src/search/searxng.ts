@@ -47,8 +47,16 @@ export class SearxngSearch implements SearchProvider {
     }
     if (res.status === 429) throw new ModelError("rate_limited", "HTTP 429", 429, null, "SearXNG ограничил частоту запросов (429).");
     if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
-    const data = (await res.json()) as { results?: unknown };
-    return cleanResults(Array.isArray(data?.results) ? data.results : [], this.perQuery);
+    const data = (await res.json()) as { results?: unknown; unresponsive_engines?: unknown };
+    const results = cleanResults(Array.isArray(data?.results) ? data.results : [], this.perQuery);
+    // Пусто, потому что поисковики заблокировали SearXNG (капча, слишком много запросов), — это техническая
+    // ошибка, а не «источников нет»: иначе утверждение ошибочно получило бы вердикт «Недостаточно данных».
+    const blocked = Array.isArray(data?.unresponsive_engines) ? (data.unresponsive_engines as unknown[][]).map((e) => String(e?.[0] ?? "")).filter(Boolean) : [];
+    if (results.length === 0 && blocked.length > 0) {
+      throw new ModelError("rate_limited", `SearXNG: engines unavailable: ${blocked.join(", ")}`, 429, null,
+        `Поисковики в SearXNG временно ограничили запросы (${blocked.join(", ")}). Повторите проверку через несколько минут.`);
+    }
+    return results;
   }
 
   search(query: string, signal?: AbortSignal): Promise<SearchResult[]> {

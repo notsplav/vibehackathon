@@ -193,14 +193,14 @@ export class Store {
     this.db.prepare("UPDATE analyses SET summary = ?, updated_at = ? WHERE id = ?").run(summary, now(), id);
   }
 
-  insertClaims(id: string, claims: Pick<Claim, "id" | "normalizedClaim" | "occurrences" | "kind" | "status">[]): void {
+  insertClaims(id: string, claims: (Pick<Claim, "id" | "normalizedClaim" | "occurrences" | "kind" | "status"> & { searchQueries?: string[] })[]): void {
     this.tx(() => {
       const insert = this.db.prepare(
-        `INSERT INTO claims (analysis_id, claim_id, ord, normalized_claim, exact_text, occurrences_json, kind, status, claim_key)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO claims (analysis_id, claim_id, ord, normalized_claim, exact_text, occurrences_json, kind, status, claim_key, search_queries_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       claims.forEach((c, i) =>
-        insert.run(id, c.id, i + 1, c.normalizedClaim, c.occurrences[0]!.exactText, JSON.stringify(c.occurrences), c.kind, c.status, claimKey(c)),
+        insert.run(id, c.id, i + 1, c.normalizedClaim, c.occurrences[0]!.exactText, JSON.stringify(c.occurrences), c.kind, c.status, claimKey(c), JSON.stringify(c.searchQueries ?? [])),
       );
       this.touch(id);
     });
@@ -275,6 +275,12 @@ export class Store {
     const source = this.getClaims(String(row.analysis_id)).find((c) => c.id === String(row.claim_id));
     if (!source) return null;
     return { verdict: source.verdict, explanation: source.explanation, evidence: source.evidence, checkedAt: source.checkedAt ?? null };
+  }
+
+  /** Поисковые запросы, сохранённые при извлечении утверждений анализа. */
+  searchQueries(id: string): Map<string, string[]> {
+    const rows = this.db.prepare("SELECT claim_id, search_queries_json FROM claims WHERE analysis_id = ?").all(id) as { claim_id: string; search_queries_json: string }[];
+    return new Map(rows.map((r) => [r.claim_id, JSON.parse(r.search_queries_json) as string[]]));
   }
 
   engineOf(id: string): string | null {

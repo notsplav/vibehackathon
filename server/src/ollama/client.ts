@@ -5,10 +5,10 @@
 import type { Block, Verdict } from "../../../shared/contract.ts";
 import { VERDICTS } from "../../../shared/contract.ts";
 import { ModelError } from "../llm/errors.ts";
-import { EXTRACT_SCHEMA, EXTRACT_SYSTEM, QUERY_SCHEMA, QUERY_SYSTEM, SUMMARY_SYSTEM, VERDICT_SCHEMA, VERDICT_SYSTEM } from "../llm/prompts.ts";
+import { EXTRACT_WITH_QUERIES_SCHEMA, EXTRACT_WITH_QUERIES_SYSTEM, QUERY_SCHEMA, QUERY_SYSTEM, SUMMARY_SYSTEM, VERDICT_SCHEMA, VERDICT_SYSTEM } from "../llm/prompts.ts";
 import { DEFAULT_RETRY, type RetryPolicy, parseJson, withRetry } from "../llm/retry.ts";
 import type { ArticleContext, CheckInput, CheckOutcome, FactChecker, StepCallback, SummaryInput } from "../llm/types.ts";
-import type { RawClaim } from "../pipeline/claims.ts";
+import { type RawClaim, cleanQueries } from "../pipeline/claims.ts";
 import type { Citation, SourceAssessment } from "../pipeline/evidence.ts";
 import type { SearchProvider } from "../search/types.ts";
 
@@ -86,38 +86,40 @@ export class OllamaFactChecker implements FactChecker {
       publishedAt: article.publishedAt,
       blocks: blocks.map((b) => ({ id: b.id, type: b.type, text: b.text })),
     });
-    const parsed = parseJson(await this.chat(EXTRACT_SYSTEM, input, EXTRACT_SCHEMA, signal)) as { claims?: unknown };
+    const parsed = parseJson(await this.chat(EXTRACT_WITH_QUERIES_SYSTEM, input, EXTRACT_WITH_QUERIES_SCHEMA, signal)) as { claims?: unknown };
     if (!Array.isArray(parsed?.claims)) throw new ModelError("invalid_response", "В ответе нет массива claims");
     return parsed.claims as RawClaim[];
   }
 
   async checkClaim(input: CheckInput, signal?: AbortSignal, onStep?: StepCallback): Promise<CheckOutcome> {
-    onStep?.("queries");
     const context = {
       claim: input.claim,
       kind: input.kind,
       article: { title: input.article.title, publishedAt: input.article.publishedAt, site: hostOf(input.article.url) },
       fragments: input.context,
     };
-    const q = parseJson(await this.chat(QUERY_SYSTEM, JSON.stringify(context), QUERY_SCHEMA, signal)) as { queries?: unknown };
-    const queries = (Array.isArray(q?.queries) ? q.queries : [])
-      .filter((x): x is string => typeof x === "string" && x.trim().length > 2)
-      .map((x) => x.trim().slice(0, 300))
-      .slice(0, this.opts.queriesPerClaim);
-    if (queries.length === 0) queries.push(input.claim.slice(0, 300));
+    // Запросы обычно уже составлены при извлечении утверждений; отдельный вызов модели — только если их нет.
+    let queries = cleanQueries(input.searchQueries).slice(0, this.opts.queriesPerClaim);
+    if (queries.length === 0) {
+      onStep?.("queries");
+      const q = parseJson(await this.chat(QUERY_SYSTEM, JSON.stringify(context), QUERY_SCHEMA, signal)) as { queries?: unknown };
+      queries = cleanQueries(q?.queries).slice(0, this.opts.queriesPerClaim);
+    }
+    if (queries.length === 0) queries = [input.claim.slice(0, 300)];
     onStep?.("search", queries);
 
+    // Запросы одного утверждения ищутся параллельно; порядок источников — по порядку запросов.
+    const results = await Promise.all(queries.map((query) => this.opts.search.search(query, signal)));
     const citations: Citation[] = [];
     const seen = new Set<string>();
     let index = 0;
-    for (const query of queries) {
-      for (const r of await this.opts.search.search(query, signal)) {
+    for (const list of results) {
+      for (const r of list) {
         const current = index++;
         if (seen.has(r.url)) continue;
         seen.add(r.url);
         citations.push({ url: r.url, title: r.title, annotationIndex: current, citedText: r.content?.slice(0, SNIPPET_CHARS) ?? null });
       }
-      if (citations.length >= MAX_SOURCES) break;
     }
     citations.splice(MAX_SOURCES);
 

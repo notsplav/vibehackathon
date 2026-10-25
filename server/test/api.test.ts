@@ -40,14 +40,17 @@ class FakeChecker implements FactChecker {
     return [
       { occurrences: [{ blockId: "b1", exactText: "В Заречье открылась библиотека" }], normalizedClaim: "В Заречье открылась библиотека", kind: "event", isOpinion: false },
       { occurrences: [{ blockId: "b2", exactText: "В Заречье открылась библиотека" }], normalizedClaim: "В Заречье открылась библиотека", kind: "event", isOpinion: false },
-      { occurrences: [{ blockId: "b2", exactText: "Фонд насчитывает 40 тысяч книг" }], normalizedClaim: "Фонд библиотеки — 40 тысяч книг", kind: "number", isOpinion: false },
+      { occurrences: [{ blockId: "b2", exactText: "Фонд насчитывает 40 тысяч книг" }], normalizedClaim: "Фонд библиотеки — 40 тысяч книг", kind: "number", isOpinion: false, searchQueries: ["фонд библиотеки Заречье 40 тысяч книг"] },
       { occurrences: [{ blockId: "b3", exactText: "Это лучшая библиотека города" }], normalizedClaim: "Это лучшая библиотека города", kind: "other", isOpinion: true },
       { occurrences: [{ blockId: "b3", exactText: "Она работает с 10:00 до 20:00" }], normalizedClaim: "Библиотека работает с 10:00 до 20:00", kind: "other", isOpinion: false },
     ];
   }
 
+  queriesSeen = new Map<string, string[]>();
+
   async checkClaim(input: CheckInput, _signal?: AbortSignal, onStep?: StepCallback): Promise<CheckOutcome> {
     this.checkCalls++;
+    this.queriesSeen.set(input.claim, input.searchQueries ?? []);
     onStep?.("search", [`запрос: ${input.claim}`]);
     if (this.gate) await this.gate;
     if (this.failWith) throw this.failWith;
@@ -160,6 +163,15 @@ test("полный проход: дубликаты объединены, мне
   // Изменённый текст — другая редакция, кэш не используется.
   const edited = { ...article, blocks: [...article.blocks.slice(0, 2), { ...article.blocks[2]!, text: "Новый текст абзаца." }] };
   expect((await call("POST", "/api/analyses", { body: edited })).body.cached).toBe(false);
+});
+
+test("запросы, составленные при извлечении, сохраняются и доходят до проверки", async () => {
+  const checker = new FakeChecker();
+  const { call, waitFor } = await setup(checker);
+  const { body } = await call("POST", "/api/analyses", { body: article });
+  await waitFor(body.analysisId, (s) => s.status === "completed" && s.live === null);
+  expect(checker.queriesSeen.get("Фонд библиотеки — 40 тысяч книг")).toEqual(["фонд библиотеки Заречье 40 тысяч книг"]);
+  expect(checker.queriesSeen.get("Библиотека работает с 10:00 до 20:00")).toEqual([]);
 });
 
 test("отмена: готовые результаты сохраняются, остальные — not_checked", async () => {
