@@ -11,7 +11,7 @@ import { type BlockDraft, collectBodyBlocks, textFingerprint } from "./blocks.ts
 import { resolveDates } from "./dates.ts";
 import { headlineMatches, parseJsonLd, selectArticle, stringValue } from "./jsonld.ts";
 import { probablyReaderable, runReadabilityOnClone } from "./readability.ts";
-import { isInExcludedRegion } from "./regions.ts";
+import { isExcludedElement, isInExcludedRegion } from "./regions.ts";
 import { type RootCandidate, commonAncestor, findMarkedRoot, findScoredRoot, validateRoot } from "./root.ts";
 import { isHiddenDeep, normalizeForMatch, resetVisibilityCache, visibleText } from "./text.ts";
 import { urlFragment } from "./url.ts";
@@ -25,6 +25,8 @@ export interface ExtractionResult {
 }
 
 const SUBTITLE_CLASS = /(^|[\s_-])(subtitle|sub-?title|subhead\w*|lead|dek|standfirst|announce|summary|excerpt|intro)([\s_-]|$)/i;
+/** То же в CSS-модулях с camelCase: «PageLead_text», «ArticleSubtitle__x». */
+const SUBTITLE_CAMEL = /(Lead|Subtitle|SubTitle|Subhead|Dek|Standfirst|Announce|Summary|Excerpt|Intro)(?=[A-Z_\s-]|$)/;
 /** Доля абзацев Readability, которые должны лежать внутри выбранного корня. */
 const MIN_READABILITY_AGREEMENT = 0.6;
 
@@ -58,18 +60,24 @@ export function extractArticle(doc: Document, pageUrl: string = doc.URL): Extrac
 
   const readability = runReadabilityOnClone(doc);
   if (!readability) warnings.push("readability: не удалось разобрать клон страницы");
-  if (readability && readability.originalElements.length > 0) {
-    const readRoot = commonAncestor(readability.originalElements);
-    const agreement = candidate
-      ? readability.originalElements.filter((el) => candidate!.root.contains(el)).length / readability.originalElements.length
-      : 0;
+  // Readability выбирает самый длинный текст страницы — это может быть рекомендованная статья
+  // из бесконечной ленты. Её абзацы из служебных областей не учитываются.
+  const readEls = (readability?.originalElements ?? []).filter((el) => !isInExcludedRegion(el));
+  if (readability && readability.originalElements.length > 0 && readEls.length === 0) {
+    warnings.push("readability: выбранный ею текст лежит в служебной области (рекомендации, комментарии) и не используется");
+  }
+  if (readEls.length > 0) {
+    const readRoot = commonAncestor(readEls);
+    const readUsable = !!readRoot && !isInExcludedRegion(readRoot) && validateRoot(readRoot).ok && !spansSeveralArticles(readRoot);
+    const agreement = candidate ? readEls.filter((el) => candidate!.root.contains(el)).length / readEls.length : 0;
     if (candidate && agreement < MIN_READABILITY_AGREEMENT) {
       warnings.push(`readability: совпадение с найденным текстом ${Math.round(agreement * 100)}%`);
-      if (!strongRoot && readRoot && validateRoot(readRoot).ok) candidate = { root: readRoot, method: "readability" };
-    } else if (!candidate && readRoot && validateRoot(readRoot).ok) {
-      candidate = { root: readRoot, method: "readability" };
+      if (!strongRoot && readUsable) candidate = { root: readRoot!, method: "readability" };
+    } else if (!candidate && readUsable) {
+      candidate = { root: readRoot!, method: "readability" };
     }
   }
+  if (candidate && spansSeveralArticles(candidate.root)) warnings.push("root: в найденном тексте несколько заголовков h1 — возможно, захвачена соседняя статья");
 
   // --- Заголовок и подзаголовок ---
   const titleEl = pickTitle(h1s, ldHeadline, candidate?.root ?? null);
@@ -228,12 +236,35 @@ function pickSubtitle(title: Element, alternative: string | null, root: Element 
     const exact = candidates.find((el) => normalizeForMatch(visibleText(el)) === target);
     if (exact) return exact;
   }
-  const next = title.nextElementSibling;
-  if (next && !isHiddenDeep(next) && (next.tagName === "H2" || SUBTITLE_CLASS.test(next.getAttribute("class") ?? ""))) {
-    const text = visibleText(next);
-    if (text.length >= 20 && text.length <= 400 && !(root && root.contains(next))) return next;
+  // Лид — первый содержательный сосед заголовка. Пустые и служебные соседи (кнопки «поделиться») пропускаются;
+  // если заголовок обёрнут в <div>, лид ищется рядом с обёрткой.
+  let anchor: Element = title;
+  let next = nextMeaningful(anchor);
+  for (let i = 0; i < 2 && !next && anchor.parentElement; i++) {
+    anchor = anchor.parentElement;
+    next = nextMeaningful(anchor);
+  }
+  if (!next) return null;
+  const nextClass = next.getAttribute("class") ?? "";
+  const text = visibleText(next);
+  if (text.length < 20 || text.length > 400) return null;
+  // Явно размеченный лид может лежать и внутри тела статьи; голый h2 внутри тела — скорее заголовок раздела.
+  if (next.tagName === "SUMMARY" || SUBTITLE_CLASS.test(nextClass) || SUBTITLE_CAMEL.test(nextClass)) return next;
+  if (next.tagName === "H2" && !(root && root.contains(next))) return next;
+  return null;
+}
+
+function nextMeaningful(el: Element): Element | null {
+  for (let sib = el.nextElementSibling; sib; sib = sib.nextElementSibling) {
+    if (isHiddenDeep(sib) || isExcludedElement(sib) || !visibleText(sib)) continue;
+    return sib;
   }
   return null;
+}
+
+/** Корень, в котором несколько видимых h1, захватывает больше одной статьи (например, бесконечная лента). */
+function spansSeveralArticles(root: Element): boolean {
+  return Array.from(root.querySelectorAll("h1")).filter((h) => !isHiddenDeep(h)).length > 1;
 }
 
 /** Область для поиска byline: общий предок заголовка и тела статьи, без поднятия до <body>. */
