@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { withRetry } from "../src/gemini/client.ts";
-import { classifyError } from "../src/gemini/errors.ts";
+import { classifyError } from "../src/llm/errors.ts";
+import { withRetry } from "../src/llm/retry.ts";
 
 const fast = { attempts: 3, baseDelayMs: 1, maxDelayMs: 5 };
 

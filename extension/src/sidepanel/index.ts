@@ -1,7 +1,7 @@
 // Боковая панель: запуск анализа, прогресс, список утверждений, сводка и ошибки.
 // Прогресс хранится на сервере; панель запоминает только analysisId для URL вкладки и восстанавливается по нему.
 
-import type { AnalysisState, ArticleMetadata, Claim, ExtractedArticle, SourcedValue } from "../../../shared/contract.ts";
+import type { AnalysisState, ArticleMetadata, Claim, ExtractedArticle, HealthResponse, SourcedValue } from "../../../shared/contract.ts";
 import { VERDICTS } from "../../../shared/contract.ts";
 import { LABELS, displayState } from "../labels.ts";
 import type { ExtractReply, PanelMessage, RenderReply } from "../messages.ts";
@@ -25,10 +25,10 @@ interface View {
   error: string | null;
   notice: string | null;
   stale: boolean;
-  geminiConfigured: boolean | null;
+  health: HealthResponse | null;
 }
 
-const view: View = { tabId: null, url: null, saved: null, analysis: null, metadata: null, busy: null, error: null, notice: null, stale: false, geminiConfigured: null };
+const view: View = { tabId: null, url: null, saved: null, analysis: null, metadata: null, busy: null, error: null, notice: null, stale: false, health: null };
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let generation = 0;
 
@@ -76,8 +76,8 @@ async function init(): Promise<void> {
   Object.assign(view, { tabId: tab?.id ?? null, url: tab?.url ?? null, saved: null, analysis: null, metadata: null, busy: null, error: null, notice: null, stale: false });
   render();
   api.health().then(
-    (h) => ((view.geminiConfigured = h.geminiConfigured), render()),
-    () => ((view.geminiConfigured = null), render()),
+    (health) => ((view.health = health), render()),
+    () => ((view.health = null), render()),
   );
   if (!view.url) return;
   const key = storageKey(view.url);
@@ -310,15 +310,23 @@ function claimItem(c: Claim): HTMLElement {
   return item;
 }
 
+function privacyText(health: HealthResponse | null): string {
+  const where =
+    health?.provider === "ollama"
+      ? `в локальную модель Ollama (${health.model}); в интернет уходят только поисковые запросы — в Ollama Web Search`
+      : "далее в Gemini API для поиска источников";
+  return `Текст статьи (заголовок, автор, дата и абзацы) будет отправлен на локальный сервер 127.0.0.1 и ${where}. Ничего не отправляется без нажатия кнопки.`;
+}
+
 function render(): void {
   const a = view.analysis;
   const children: (Node | null)[] = [];
-  if (view.geminiConfigured === false) children.push(h("p", { cls: "warning", text: "На сервере не задан GEMINI_API_KEY: проверка утверждений будет недоступна." }));
+  if (view.health?.problem) children.push(h("p", { cls: "warning", text: view.health.problem }));
   if (view.metadata) children.push(metadataSection(view.metadata));
 
   if (!a && !view.busy) {
     children.push(
-      h("p", { cls: "privacy", text: "Текст статьи (заголовок, автор, дата и абзацы) будет отправлен на локальный сервер 127.0.0.1 и далее в Gemini API для поиска источников. Ничего не отправляется без нажатия кнопки." }),
+      h("p", { cls: "privacy", text: privacyText(view.health) }),
       button("Проанализировать статью", () => void analyze(false), "primary"),
     );
   }

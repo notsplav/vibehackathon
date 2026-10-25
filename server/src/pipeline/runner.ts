@@ -3,8 +3,8 @@
 
 import type { Store } from "../db/store.ts";
 import { now } from "../db/store.ts";
-import type { FactChecker } from "../gemini/client.ts";
-import { GeminiError, classifyError, userMessage } from "../gemini/errors.ts";
+import { ModelError, type ModelErrorKind, type Provider, classifyError, userMessage } from "../llm/errors.ts";
+import type { FactChecker } from "../llm/types.ts";
 import { checkableBlocks, chunkBlocks, mergeDuplicates, validateClaims } from "./claims.ts";
 import { decideVerdict } from "./evidence.ts";
 import { computeStats } from "./stats.ts";
@@ -12,8 +12,19 @@ import { computeStats } from "./stats.ts";
 /** Версия алгоритма: входит в ключ кэша, чтобы после изменения промптов не показывать старые результаты. */
 export const ALGORITHM_VERSION = 1;
 
-/** Сколько подряд claims могут упасть на 429 после всех повторов, прежде чем квота считается исчерпанной. */
-const MAX_CONSECUTIVE_RATE_LIMITS = 2;
+/**
+ * Сколько подряд claims могут упасть с одной и той же повторяемой ошибкой (429, недоступность) после всех
+ * повторов, прежде чем проверки останавливаются: для 429 это значит, что квота исчерпана.
+ */
+const MAX_CONSECUTIVE_RETRYABLE = 2;
+
+export interface RunnerOptions {
+  provider: Provider;
+  concurrency: number;
+  chunkChars: number;
+  /** Секрет, который вырезается из сообщений об ошибках. */
+  apiKey: string | null;
+}
 
 export interface Logger {
   info(msg: string): void;
@@ -29,13 +40,13 @@ export class AnalysisRunner {
   private readonly running = new Map<string, RunState>();
   private readonly store: Store;
   private readonly checker: FactChecker | null;
-  private readonly options: { concurrency: number; chunkChars: number; apiKey: string | null };
+  private readonly options: RunnerOptions;
   private readonly log: Logger;
 
   constructor(
     store: Store,
     checker: FactChecker | null,
-    options: { concurrency: number; chunkChars: number; apiKey: string | null },
+    options: RunnerOptions,
     log: Logger,
   ) {
     this.store = store;
@@ -58,8 +69,8 @@ export class AnalysisRunner {
         if (!this.store.getAnalysisRow(id)) return;
         const err = classifyError(e, this.options.apiKey);
         this.log.warn(`analysis ${id} failed: ${err.kind}`);
-        this.store.moveClaims(id, ["queued", "checking"], "failed", userMessage(err.kind));
-        this.store.setStatus(id, "failed", userMessage(err.kind));
+        this.store.moveClaims(id, ["queued", "checking"], "failed", this.message(err.kind));
+        this.store.setStatus(id, "failed", this.message(err.kind));
       })
       .finally(() => this.running.delete(id));
   }
@@ -94,10 +105,14 @@ export class AnalysisRunner {
     }
   }
 
+  private message(kind: ModelErrorKind): string {
+    return userMessage(kind, this.options.provider);
+  }
+
   private async run(id: string, state: RunState): Promise<void> {
     const signal = state.controller.signal;
     if (!this.checker) {
-      this.store.setStatus(id, "failed", "Сервер не настроен: GEMINI_API_KEY не задан.");
+      this.store.setStatus(id, "failed", this.message("not_configured"));
       return;
     }
     const row = this.store.getAnalysisRow(id);
@@ -138,7 +153,7 @@ export class AnalysisRunner {
     const queue = this.store.claimIdsWithStatus(id, "queued");
     const blockText = new Map(blocks.map((b) => [b.id, b.text]));
     const claims = new Map(this.store.getClaims(id).map((c) => [c.id, c]));
-    let consecutiveRateLimits = 0;
+    let lastRetryable: { kind: ModelErrorKind; count: number } | null = null;
     let fatal: string | null = null;
 
     const worker = async (): Promise<void> => {
@@ -175,14 +190,18 @@ export class AnalysisRunner {
             error: null,
             checkedAt: now(),
           });
-          consecutiveRateLimits = 0;
+          lastRetryable = null;
         } catch (e) {
           if (signal.aborted) return;
-          const err = e instanceof GeminiError ? e : classifyError(e, this.options.apiKey);
-          this.store.updateClaim(id, claimId, { status: "failed", error: userMessage(err.kind), checkedAt: now() });
-          if (err.kind === "rate_limited") consecutiveRateLimits++;
-          if (err.fatal) fatal = userMessage(err.kind);
-          else if (consecutiveRateLimits >= MAX_CONSECUTIVE_RATE_LIMITS) fatal = userMessage("quota_exhausted");
+          const err = e instanceof ModelError ? e : classifyError(e, this.options.apiKey);
+          this.store.updateClaim(id, claimId, { status: "failed", error: this.message(err.kind), checkedAt: now() });
+          if (err.fatal) fatal = this.message(err.kind);
+          else if (err.retryable) {
+            lastRetryable = lastRetryable?.kind === err.kind ? { kind: err.kind, count: lastRetryable.count + 1 } : { kind: err.kind, count: 1 };
+            if (lastRetryable.count >= MAX_CONSECUTIVE_RETRYABLE) {
+              fatal = this.message(err.kind === "rate_limited" ? "quota_exhausted" : err.kind);
+            }
+          }
         }
       }
     };

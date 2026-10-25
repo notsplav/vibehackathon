@@ -15,6 +15,13 @@ export interface AppDeps {
   config: Config;
   store: Store;
   runner: AnalysisRunner;
+  /** Почему проверка сейчас невозможна (для /api/health); null — всё готово. */
+  problem: () => Promise<string | null>;
+}
+
+/** Провайдер и модель анализа: часть ключа кэша. */
+export function engineOf(config: Config): string {
+  return `${config.provider}:${config.model}`;
 }
 
 class HttpError extends Error {
@@ -85,7 +92,7 @@ function guard(req: IncomingMessage, config: Config): void {
   if (mutating && !originAllowed) throw new HttpError(403, "Требуется Origin расширения");
 }
 
-export function createApp({ config, store, runner }: AppDeps): Server {
+export function createApp({ config, store, runner, problem }: AppDeps): Server {
   const routes = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     guard(req, config);
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -93,7 +100,7 @@ export function createApp({ config, store, runner }: AppDeps): Server {
     if (parts[0] !== "api") throw new HttpError(404, "Не найдено");
 
     if (parts[1] === "health" && parts.length === 2 && req.method === "GET") {
-      const body: HealthResponse = { ok: true, geminiConfigured: !!config.geminiApiKey, model: config.model };
+      const body: HealthResponse = { ok: true, provider: config.provider, model: config.model, problem: await problem() };
       return send(res, 200, body);
     }
 
@@ -123,7 +130,7 @@ export function createApp({ config, store, runner }: AppDeps): Server {
       const hash = textHash(article.blocks);
       const key = cacheUrl(article.canonicalUrl ?? article.url);
       const force = url.searchParams.get("force") === "1";
-      const cached = force ? null : store.findCached(key, hash, ALGORITHM_VERSION);
+      const cached = force ? null : store.findCached(key, hash, ALGORITHM_VERSION, engineOf(config));
       if (cached) {
         // Прерванный перезапуском анализ продолжится.
         if (!["completed", "cancelled", "failed"].includes(cached.status)) runner.start(cached.id);
@@ -138,6 +145,7 @@ export function createApp({ config, store, runner }: AppDeps): Server {
         cacheUrl: key,
         textHash: hash,
         algorithmVersion: ALGORITHM_VERSION,
+        engine: engineOf(config),
         metadata: article.metadata,
         blocks: article.blocks,
       });

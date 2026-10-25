@@ -70,4 +70,13 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 2,
+    name: "analysis_engine",
+    // Провайдер и модель входят в ключ кэша: результат одной модели не выдаётся за результат другой.
+    sql: `
+      ALTER TABLE analyses ADD COLUMN engine TEXT NOT NULL DEFAULT '';
+      CREATE INDEX analyses_cache_engine ON analyses (cache_url, text_hash, algorithm_version, engine);
+    `,
+  },
 ];
