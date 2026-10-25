@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type {
   AnalysisState,
+  ArticleFocus,
   AnalysisStatus,
   ArticleMetadata,
   Block,
@@ -21,6 +22,7 @@ import { MIGRATIONS } from "./migrations.ts";
 
 export interface AnalysisRow {
   id: string;
+  focus: ArticleFocus | null;
   /** Запущен через «Повторить анализ»: готовые результаты других анализов не переиспользуются. */
   fresh: boolean;
   url: string;
@@ -83,6 +85,7 @@ export class Store {
     /** Провайдер и модель, например "ollama:qwen3:14b". */
     engine: string;
     fresh?: boolean;
+    focus?: ArticleFocus | null;
     metadata: ArticleMetadata;
     blocks: Block[];
   }): void {
@@ -90,10 +93,10 @@ export class Store {
     this.tx(() => {
       this.db
         .prepare(
-          `INSERT INTO analyses (id, url, canonical_url, cache_url, text_hash, algorithm_version, engine, fresh, status, metadata_json, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
+          `INSERT INTO analyses (id, url, canonical_url, cache_url, text_hash, algorithm_version, engine, fresh, focus_json, status, metadata_json, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
         )
-        .run(input.id, input.url, input.canonicalUrl, input.cacheUrl, input.textHash, input.algorithmVersion, input.engine, input.fresh ? 1 : 0, JSON.stringify(input.metadata), ts, ts);
+        .run(input.id, input.url, input.canonicalUrl, input.cacheUrl, input.textHash, input.algorithmVersion, input.engine, input.fresh ? 1 : 0, input.focus ? JSON.stringify(input.focus) : null, JSON.stringify(input.metadata), ts, ts);
       const insert = this.db.prepare("INSERT INTO blocks (analysis_id, block_id, ord, type, text, links_json) VALUES (?, ?, ?, ?, ?, ?)");
       for (const b of input.blocks) insert.run(input.id, b.id, b.order, b.type, b.text, JSON.stringify(b.links));
     });
@@ -125,6 +128,7 @@ export class Store {
     return {
       analysisId: row.id,
       status: row.status,
+      focus: row.focus,
       preliminary: !TERMINAL.includes(row.status) || claims.some((c) => c.status === "queued" || c.status === "checking"),
       url: row.url,
       canonicalUrl: row.canonicalUrl,
@@ -328,6 +332,7 @@ function toAnalysisRow(r: Record<string, unknown>): AnalysisRow {
   return {
     id: String(r.id),
     fresh: Number(r.fresh) === 1,
+    focus: r.focus_json ? (JSON.parse(String(r.focus_json)) as ArticleFocus) : null,
     url: String(r.url),
     canonicalUrl: (r.canonical_url as string | null) ?? null,
     status: r.status as AnalysisStatus,

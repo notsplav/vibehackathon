@@ -37,7 +37,8 @@ class FakeChecker implements FactChecker {
   gate: Promise<void> | null = null;
   failWith: ModelError | null = null;
 
-  async extractClaims(): Promise<RawClaim[]> {
+  async extractClaims(_article: unknown, _blocks: unknown, _signal?: AbortSignal, focus?: unknown): Promise<RawClaim[]> {
+    this.focusSeen = focus;
     return [
       { occurrences: [{ blockId: "b1", exactText: "В Заречье открылась библиотека" }], normalizedClaim: "В Заречье открылась библиотека", kind: "event", isOpinion: false },
       { occurrences: [{ blockId: "b2", exactText: "В Заречье открылась библиотека" }], normalizedClaim: "В Заречье открылась библиотека", kind: "event", isOpinion: false },
@@ -48,6 +49,7 @@ class FakeChecker implements FactChecker {
   }
 
   queriesSeen = new Map<string, string[]>();
+  focusSeen: unknown = undefined;
 
   async checkClaim(input: CheckInput, _signal?: AbortSignal, onStep?: StepCallback): Promise<CheckOutcome> {
     this.checkCalls++;
@@ -257,6 +259,24 @@ test("одинаковые утверждения проверяются оди�
   const forced = await call("POST", "/api/analyses?force=1", { body: reprint });
   await waitFor(forced.body.analysisId, (s) => s.status === "completed" && s.live === null);
   expect(checker.checkCalls).toBe(6);
+});
+
+test("проверка выделенного фрагмента: только утверждения из выделения, отдельная запись кэша", async () => {
+  const checker = new FakeChecker();
+  const { call, waitFor } = await setup(checker);
+  const focus = { blockIds: ["b3"], text: "Она работает с 10:00 до 20:00." };
+  expect((await call("POST", "/api/analyses", { body: { ...article, focus: { ...focus, blockIds: ["b9"] } } })).status).toBe(400);
+
+  const created = await call("POST", "/api/analyses", { body: { ...article, focus } });
+  expect(created.status).toBe(201);
+  const state = await waitFor(created.body.analysisId, (s) => s.status === "completed" && s.live === null);
+  expect(checker.focusSeen).toEqual(focus);
+  expect(state.focus).toEqual(focus);
+  expect(state.claims.map((c) => c.normalizedClaim)).toEqual(["Библиотека работает с 10:00 до 20:00"]);
+
+  // Та же статья без выделения — другой анализ.
+  const whole = await call("POST", "/api/analyses", { body: article });
+  expect(whole.body.analysisId).not.toBe(created.body.analysisId);
 });
 
 test("DELETE удаляет результат", async () => {

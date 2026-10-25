@@ -1,7 +1,7 @@
 // Этап A: подготовка блоков для Gemini, проверка ответа и объединение дубликатов (ТЗ 6.2, 7).
 // Ответ модели — недоверенные данные: каждый blockId и фрагмент проверяются по сохранённым блокам.
 
-import type { Block, ClaimKind, ClaimOccurrence } from "../../../shared/contract.ts";
+import type { ArticleFocus, Block, ClaimKind, ClaimOccurrence } from "../../../shared/contract.ts";
 import { foldChars, normalizeForMatch, normalizeSpace, wordSimilarity } from "../../../shared/text.ts";
 
 const KINDS: ClaimKind[] = ["event", "date", "number", "quote", "attribution", "other"];
@@ -197,4 +197,42 @@ export function mergeDuplicates(claims: DraftClaim[], blocks: Block[]): DraftCla
   };
   for (const c of merged) c.occurrences.sort((a, b) => (order.get(a.blockId) ?? 0) - (order.get(b.blockId) ?? 0));
   return merged.sort((a, b) => position(a) - position(b));
+}
+
+/** Длина наибольшей общей подстроки (после посимвольной нормализации). */
+function commonSubstring(a: string, b: string): number {
+  const x = foldChars(normalizeSpace(a));
+  const y = foldChars(normalizeSpace(b));
+  let best = 0;
+  let prev = new Uint16Array(y.length + 1);
+  for (let i = 1; i <= x.length; i++) {
+    const cur = new Uint16Array(y.length + 1);
+    for (let j = 1; j <= y.length; j++) {
+      if (x[i - 1] === y[j - 1]) {
+        cur[j] = prev[j - 1]! + 1;
+        if (cur[j]! > best) best = cur[j]!;
+      }
+    }
+    prev = cur;
+  }
+  return best;
+}
+
+/**
+ * Проверка выделенного фрагмента: остаются только вхождения из выделенных блоков, пересекающиеся с выделением.
+ * Выделение может начинаться посреди предложения, поэтому достаточно общего куска не короче половины фрагмента
+ * утверждения (или 40 символов) — либо фрагмент целиком внутри выделения.
+ */
+export function restrictToFocus(claims: DraftClaim[], focus: ArticleFocus): DraftClaim[] {
+  const blocks = new Set(focus.blockIds);
+  const out: DraftClaim[] = [];
+  for (const c of claims) {
+    const occurrences = c.occurrences.filter((o) => {
+      if (!blocks.has(o.blockId)) return false;
+      const overlap = commonSubstring(o.exactText, focus.text);
+      return overlap >= Math.min(normalizeSpace(o.exactText).length, Math.max(40, normalizeSpace(o.exactText).length / 2));
+    });
+    if (occurrences.length > 0) out.push({ ...c, occurrences });
+  }
+  return out;
 }

@@ -4,7 +4,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from "node:http";
-import type { Block, CreateAnalysisResponse, HealthResponse } from "../../shared/contract.ts";
+import type { ArticleFocus, Block, CreateAnalysisResponse, HealthResponse } from "../../shared/contract.ts";
 import { normalizeSpace } from "../../shared/text.ts";
 import type { Config } from "./config.ts";
 import type { Store } from "./db/store.ts";
@@ -33,9 +33,11 @@ const ALLOWED_HOSTS = new Set(["127.0.0.1", "localhost"]);
 const ID = /^[0-9a-f-]{36}$/;
 
 /** Хэш нормализованного текста блоков: ключ кэша вместе с URL, чтобы не показывать результат старой редакции. */
-export function textHash(blocks: Pick<Block, "type" | "text">[]): string {
+export function textHash(blocks: Pick<Block, "type" | "text">[], focus?: ArticleFocus | null): string {
   const h = createHash("sha256");
   for (const b of blocks) h.update(`${b.type}\n${normalizeSpace(b.text)}\n\n`);
+  // Проверка выделенного фрагмента — отдельная запись кэша для каждого выделения.
+  if (focus) h.update(`focus\n${focus.blockIds.join(",")}\n${normalizeSpace(focus.text)}`);
   return h.digest("hex");
 }
 
@@ -140,8 +142,10 @@ export function createApp({ config, store, runner, settings }: AppDeps): Server 
       }
       const ids = new Set(article.blocks.map((b) => b.id));
       if (ids.size !== article.blocks.length) throw new HttpError(400, "Повторяющиеся blockId");
+      const focus = article.focus ?? null;
+      if (focus && !focus.blockIds.every((id) => ids.has(id))) throw new HttpError(400, "Выделение ссылается на несуществующий блок");
 
-      const hash = textHash(article.blocks);
+      const hash = textHash(article.blocks, focus);
       const key = cacheUrl(article.canonicalUrl ?? article.url);
       const force = url.searchParams.get("force") === "1";
       const engine = settings.current().engine;
@@ -162,6 +166,7 @@ export function createApp({ config, store, runner, settings }: AppDeps): Server 
         algorithmVersion: ALGORITHM_VERSION,
         engine,
         fresh: force,
+        focus,
         metadata: article.metadata,
         blocks: article.blocks,
       });

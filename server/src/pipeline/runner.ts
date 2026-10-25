@@ -6,7 +6,7 @@ import type { Store } from "../db/store.ts";
 import { now } from "../db/store.ts";
 import { ModelError, type ModelErrorKind, type Provider, classifyError, userMessage } from "../llm/errors.ts";
 import type { FactChecker } from "../llm/types.ts";
-import { checkableBlocks, chunkBlocks, mergeDuplicates, validateClaims } from "./claims.ts";
+import { checkableBlocks, chunkBlocks, mergeDuplicates, restrictToFocus, validateClaims } from "./claims.ts";
 import { decideVerdict } from "./evidence.ts";
 import { computeStats } from "./stats.ts";
 
@@ -158,11 +158,14 @@ export class AnalysisRunner {
       live.extraction = { done: 0, total: chunks.length };
       this.log.info(`${tag}: выделяем утверждения из ${blocks.length} блоков (частей: ${chunks.length}) — «${article.title ?? article.url}»`);
       for (const chunk of chunks) {
-        raw.push(...(await checker.extractClaims(article, chunk, signal)));
+        raw.push(...(await checker.extractClaims(article, chunk, signal, row.focus)));
         live.extraction.done++;
         if (state.cancelled) break;
       }
-      const report = validateClaims(raw, blocks);
+      // При проверке фрагмента утверждения берутся только из выделенных блоков и только пересекающиеся с выделением.
+      const focusIds = row.focus ? new Set(row.focus.blockIds) : null;
+      const report = validateClaims(raw, focusIds ? blocks.filter((b) => focusIds.has(b.id)) : blocks);
+      if (row.focus) report.claims = restrictToFocus(report.claims, row.focus);
       if (report.rejected || report.droppedOccurrences || report.reassignedOccurrences) {
         this.log.warn(
           `analysis ${id}: rejected ${report.rejected} claims, dropped ${report.droppedOccurrences} and reassigned ${report.reassignedOccurrences} occurrences`,

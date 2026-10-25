@@ -3,10 +3,10 @@
 // Так результат не зависит от того, поддерживает ли модель schema и grounding в одном запросе.
 
 import { GoogleGenAI } from "@google/genai";
-import type { Block, Verdict } from "../../../shared/contract.ts";
+import type { ArticleFocus, Block, Verdict } from "../../../shared/contract.ts";
 import { VERDICTS } from "../../../shared/contract.ts";
 import { ModelError } from "../llm/errors.ts";
-import { EXTRACT_SCHEMA, EXTRACT_SYSTEM, SEARCH_SYSTEM, SUMMARY_SYSTEM, VERDICT_SCHEMA, VERDICT_SYSTEM } from "../llm/prompts.ts";
+import { EXTRACT_SCHEMA, EXTRACT_SYSTEM, SEARCH_SYSTEM, SUMMARY_SYSTEM, VERDICT_SCHEMA, VERDICT_SYSTEM, extractInput, extractSystem } from "../llm/prompts.ts";
 import { DEFAULT_RETRY, type RetryPolicy, parseJson, withRetry } from "../llm/retry.ts";
 import type { ArticleContext, CheckInput, CheckOutcome, FactChecker, StepCallback, SummaryInput } from "../llm/types.ts";
 import type { RawClaim } from "../pipeline/claims.ts";
@@ -45,16 +45,11 @@ export class GeminiFactChecker implements FactChecker {
     );
   }
 
-  async extractClaims(article: ArticleContext, blocks: Block[], signal?: AbortSignal): Promise<RawClaim[]> {
-    const input = JSON.stringify({
-      title: article.title,
-      publishedAt: article.publishedAt,
-      blocks: blocks.map((b) => ({ id: b.id, type: b.type, text: b.text })),
-    });
+  async extractClaims(article: ArticleContext, blocks: Block[], signal?: AbortSignal, focus?: ArticleFocus | null): Promise<RawClaim[]> {
     const interaction = await this.create(
       {
-        system_instruction: EXTRACT_SYSTEM,
-        input,
+        system_instruction: extractSystem(EXTRACT_SYSTEM, focus),
+        input: extractInput(article, blocks, focus),
         response_format: { type: "text", mime_type: "application/json", schema: EXTRACT_SCHEMA },
         generation_config: { temperature: 0 },
       },
