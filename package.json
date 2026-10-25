@@ -1,0 +1,22 @@
+{
+  "name": "vibehackathon",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "extension",
+    "server"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p shared && tsc -p extension && tsc -p server",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "description": "Главная портала со списками ссылок: ожидается ошибка not_article.",
+  "source": {
+    "file": "fixtures/pages/not-article.html"
+  },
+  "url": "https://news.example.test/",
+  "expected": {
+    "status": "failed",
+    "method": "none",
+    "errorCode": "not_article",
+    "pageType": "unknown",
+    "language": "ru",
+    "canonicalUrl": null,
+    "metadata": {
+      "title": null,
+      "subtitle": null,
+      "authors": [],
+      "publishedAt": null,
+      "modifiedAt": null
+    },
+    "blocks": [],
+    "warnings": [
+      "jsonld: нет Article, относящегося к этой странице"
+    ]
+  }
+}
