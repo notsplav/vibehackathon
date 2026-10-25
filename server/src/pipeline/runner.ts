@@ -25,6 +25,8 @@ export interface RunnerOptions {
   chunkChars: number;
   /** Секрет, который вырезается из сообщений об ошибках. */
   apiKey: string | null;
+  /** Сколько часов переиспользовать результат такого же утверждения из другого анализа; 0 — никогда. */
+  reuseHours: number;
 }
 
 export interface Logger {
@@ -78,8 +80,8 @@ export class AnalysisRunner {
         if (!this.store.getAnalysisRow(id)) return;
         const err = classifyError(e, this.options.apiKey);
         this.log.warn(`analysis ${id} failed: ${err.kind}`);
-        this.store.moveClaims(id, ["queued", "checking"], "failed", this.message(err.kind));
-        this.store.setStatus(id, "failed", this.message(err.kind));
+        this.store.moveClaims(id, ["queued", "checking"], "failed", this.describe(err));
+        this.store.setStatus(id, "failed", this.describe(err));
       })
       .finally(() => {
         this.running.delete(id);
@@ -119,6 +121,10 @@ export class AnalysisRunner {
 
   private message(kind: ModelErrorKind): string {
     return userMessage(kind, this.options.provider);
+  }
+
+  private describe(err: ModelError): string {
+    return err.userText ?? this.message(err.kind);
   }
 
   private async run(id: string, state: RunState): Promise<void> {
@@ -174,6 +180,8 @@ export class AnalysisRunner {
     const queue = this.store.claimIdsWithStatus(id, "queued");
     const blockText = new Map(blocks.map((b) => [b.id, b.text]));
     const claims = new Map(this.store.getClaims(id).map((c) => [c.id, c]));
+    const engine = this.store.engineOf(id) ?? "";
+    const reuseSince = !row.fresh && this.options.reuseHours > 0 ? new Date(Date.now() - this.options.reuseHours * 3_600_000).toISOString() : null;
     let lastRetryable: { kind: ModelErrorKind; count: number } | null = null;
     let fatal: string | null = null;
 
@@ -182,6 +190,21 @@ export class AnalysisRunner {
         const claimId = queue.shift()!;
         const claim = claims.get(claimId);
         if (!claim) continue;
+        // Такое же утверждение уже проверено этой моделью недавно — берём готовый результат без поиска.
+        const reused = reuseSince ? this.store.findReusableClaim(claim, engine, reuseSince, id) : null;
+        if (reused) {
+          this.store.replaceEvidence(id, claimId, reused.evidence);
+          const when = reused.checkedAt ? new Date(reused.checkedAt).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" }) : "ранее";
+          this.store.updateClaim(id, claimId, {
+            status: "checked",
+            verdict: reused.verdict,
+            explanation: `${reused.explanation ?? ""} (Результат взят из проверки того же утверждения от ${when}.)`.trim(),
+            error: null,
+            checkedAt: reused.checkedAt ?? now(),
+          });
+          this.log.info(`${tag}: ${claimId} → ${reused.verdict} (повторно использован результат от ${when})`);
+          continue;
+        }
         this.store.updateClaim(id, claimId, { status: "checking" });
         const current: LiveProgress["checking"][number] = { claimId, step: "search", since: now(), queries: [] };
         live.checking.push(current);
@@ -223,13 +246,13 @@ export class AnalysisRunner {
         } catch (e) {
           if (signal.aborted) return;
           const err = e instanceof ModelError ? e : classifyError(e, this.options.apiKey);
-          this.store.updateClaim(id, claimId, { status: "failed", error: this.message(err.kind), checkedAt: now() });
+          this.store.updateClaim(id, claimId, { status: "failed", error: this.describe(err), checkedAt: now() });
           this.log.warn(`${tag}: ${claimId} → ошибка ${err.kind} (${seconds(claimStarted)} с)`);
-          if (err.fatal) fatal = this.message(err.kind);
+          if (err.fatal) fatal = this.describe(err);
           else if (err.retryable) {
             lastRetryable = lastRetryable?.kind === err.kind ? { kind: err.kind, count: lastRetryable.count + 1 } : { kind: err.kind, count: 1 };
             if (lastRetryable.count >= MAX_CONSECUTIVE_RETRYABLE) {
-              fatal = this.message(err.kind === "rate_limited" ? "quota_exhausted" : err.kind);
+              fatal = err.userText ?? this.message(err.kind === "rate_limited" ? "quota_exhausted" : err.kind);
             }
           }
         } finally {

@@ -76,7 +76,7 @@ afterEach(() => {
 async function setup(checker: FactChecker | null = new FakeChecker()) {
   const config = { ...loadConfig({ ALLOWED_ORIGINS: ORIGIN }), dbPath: ":memory:", geminiApiKey: checker ? "test" : null };
   const store = new Store(":memory:");
-  const runner = new AnalysisRunner(store, checker, { provider: "gemini", concurrency: 2, chunkChars: 8000, apiKey: null }, { info() {}, warn() {} });
+  const runner = new AnalysisRunner(store, checker, { provider: "gemini", concurrency: 2, chunkChars: 8000, apiKey: null, reuseHours: 24 }, { info() {}, warn() {} });
   const server = createApp({ config, store, runner, problem: async () => (checker ? null : "GEMINI_API_KEY не задан") });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   cleanup.push(() => server.close(), () => store.close());
@@ -215,6 +215,27 @@ test("после перезапуска прерванные проверки п
   runner.resumeAll();
   const state = await waitFor(body.analysisId, (s) => s.status === "completed");
   expect(state.claims.filter((c) => c.status === "checked")).toHaveLength(3);
+});
+
+test("одинаковые утверждения проверяются один раз: другой анализ берёт готовый результат, «Повторить» — нет", async () => {
+  const checker = new FakeChecker();
+  const { call, waitFor } = await setup(checker);
+  const first = await call("POST", "/api/analyses", { body: article });
+  await waitFor(first.body.analysisId, (s) => s.status === "completed" && s.live === null);
+  expect(checker.checkCalls).toBe(3);
+
+  // Та же новость на другом сайте: те же утверждения.
+  const reprint = { ...article, url: "https://other.example.test/news/7", canonicalUrl: "https://other.example.test/news/7" };
+  const second = await call("POST", "/api/analyses", { body: reprint });
+  const state = await waitFor(second.body.analysisId, (s) => s.status === "completed" && s.live === null);
+  expect(checker.checkCalls).toBe(3);
+  expect(state.claims.filter((c) => c.status === "checked").map((c) => c.verdict)).toEqual(["insufficient", "supported", "insufficient"]);
+  expect(state.claims[1]!.evidence[0]!.url).toBe("https://city.example.org/news/1");
+  expect(state.claims[0]!.explanation).toMatch(/Результат взят из проверки того же утверждения/);
+
+  const forced = await call("POST", "/api/analyses?force=1", { body: reprint });
+  await waitFor(forced.body.analysisId, (s) => s.status === "completed" && s.live === null);
+  expect(checker.checkCalls).toBe(6);
 });
 
 test("DELETE удаляет результат", async () => {

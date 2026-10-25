@@ -146,6 +146,7 @@ export function createApp({ config, store, runner, problem }: AppDeps): Server {
         textHash: hash,
         algorithmVersion: ALGORITHM_VERSION,
         engine: engineOf(config),
+        fresh: force,
         metadata: article.metadata,
         blocks: article.blocks,
       });

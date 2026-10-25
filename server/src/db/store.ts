@@ -15,11 +15,14 @@ import type {
   Evidence,
   Verdict,
 } from "../../../shared/contract.ts";
+import { normalizeForMatch } from "../../../shared/text.ts";
 import { computeStats } from "../pipeline/stats.ts";
 import { MIGRATIONS } from "./migrations.ts";
 
 export interface AnalysisRow {
   id: string;
+  /** Запущен через «Повторить анализ»: готовые результаты других анализов не переиспользуются. */
+  fresh: boolean;
   url: string;
   canonicalUrl: string | null;
   status: AnalysisStatus;
@@ -79,6 +82,7 @@ export class Store {
     algorithmVersion: number;
     /** Провайдер и модель, например "ollama:qwen3:14b". */
     engine: string;
+    fresh?: boolean;
     metadata: ArticleMetadata;
     blocks: Block[];
   }): void {
@@ -86,10 +90,10 @@ export class Store {
     this.tx(() => {
       this.db
         .prepare(
-          `INSERT INTO analyses (id, url, canonical_url, cache_url, text_hash, algorithm_version, engine, status, metadata_json, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
+          `INSERT INTO analyses (id, url, canonical_url, cache_url, text_hash, algorithm_version, engine, fresh, status, metadata_json, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
         )
-        .run(input.id, input.url, input.canonicalUrl, input.cacheUrl, input.textHash, input.algorithmVersion, input.engine, JSON.stringify(input.metadata), ts, ts);
+        .run(input.id, input.url, input.canonicalUrl, input.cacheUrl, input.textHash, input.algorithmVersion, input.engine, input.fresh ? 1 : 0, JSON.stringify(input.metadata), ts, ts);
       const insert = this.db.prepare("INSERT INTO blocks (analysis_id, block_id, ord, type, text, links_json) VALUES (?, ?, ?, ?, ?, ?)");
       for (const b of input.blocks) insert.run(input.id, b.id, b.order, b.type, b.text, JSON.stringify(b.links));
     });
@@ -192,11 +196,11 @@ export class Store {
   insertClaims(id: string, claims: Pick<Claim, "id" | "normalizedClaim" | "occurrences" | "kind" | "status">[]): void {
     this.tx(() => {
       const insert = this.db.prepare(
-        `INSERT INTO claims (analysis_id, claim_id, ord, normalized_claim, exact_text, occurrences_json, kind, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO claims (analysis_id, claim_id, ord, normalized_claim, exact_text, occurrences_json, kind, status, claim_key)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       claims.forEach((c, i) =>
-        insert.run(id, c.id, i + 1, c.normalizedClaim, c.occurrences[0]!.exactText, JSON.stringify(c.occurrences), c.kind, c.status),
+        insert.run(id, c.id, i + 1, c.normalizedClaim, c.occurrences[0]!.exactText, JSON.stringify(c.occurrences), c.kind, c.status, claimKey(c)),
       );
       this.touch(id);
     });
@@ -249,6 +253,35 @@ export class Store {
     );
   }
 
+  /**
+   * Последняя успешная проверка такого же утверждения той же моделью не старше `since` в другом анализе.
+   * Возвращает вердикт, объяснение и свидетельства для копирования.
+   */
+  findReusableClaim(
+    claim: Pick<Claim, "normalizedClaim" | "kind">,
+    engine: string,
+    since: string,
+    excludeAnalysisId: string,
+  ): Pick<Claim, "verdict" | "explanation" | "evidence" | "checkedAt"> | null {
+    const row = this.db
+      .prepare(
+        `SELECT c.analysis_id, c.claim_id, c.verdict, c.explanation, c.checked_at FROM claims c JOIN analyses a ON a.id = c.analysis_id
+          WHERE c.claim_key = ? AND c.status = 'checked' AND c.verdict IS NOT NULL AND c.checked_at >= ?
+            AND a.engine = ? AND c.analysis_id <> ?
+          ORDER BY c.checked_at DESC LIMIT 1`,
+      )
+      .get(claimKey(claim), since, engine, excludeAnalysisId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    const source = this.getClaims(String(row.analysis_id)).find((c) => c.id === String(row.claim_id));
+    if (!source) return null;
+    return { verdict: source.verdict, explanation: source.explanation, evidence: source.evidence, checkedAt: source.checkedAt ?? null };
+  }
+
+  engineOf(id: string): string | null {
+    const row = this.db.prepare("SELECT engine FROM analyses WHERE id = ?").get(id) as { engine: string } | undefined;
+    return row?.engine ?? null;
+  }
+
   /** Анализы, прерванные остановкой сервера. */
   unfinishedIds(): string[] {
     return (this.db.prepare("SELECT id FROM analyses WHERE status IN ('queued', 'extracting_claims', 'checking')").all() as { id: string }[]).map(
@@ -269,9 +302,15 @@ export class Store {
   }
 }
 
+/** Ключ одинаковых утверждений: вид и нормализованная формулировка. */
+function claimKey(c: Pick<Claim, "normalizedClaim" | "kind">): string {
+  return `${c.kind}:${normalizeForMatch(c.normalizedClaim)}`;
+}
+
 function toAnalysisRow(r: Record<string, unknown>): AnalysisRow {
   return {
     id: String(r.id),
+    fresh: Number(r.fresh) === 1,
     url: String(r.url),
     canonicalUrl: (r.canonical_url as string | null) ?? null,
     status: r.status as AnalysisStatus,
