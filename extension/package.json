@@ -1,0 +1,8 @@
+{
+  "name": "@vibehackathon/extension",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "jsdom": "30.1.3"
+  }
+}

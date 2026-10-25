@@ -67,6 +67,12 @@
 
 Актуальные команды — в `package.json`. Если добавляешь или меняешь скрипт (запуск сервера, сборка расширения, тесты, миграции), обнови этот раздел.
 
+Требуется Node.js 24+. Зависимости ставятся с точной версией (`.npmrc`: `save-exact=true`).
+
+- `npm install` — установить зависимости всех пакетов (`extension`, `server`).
+- `npm run typecheck` — проверка типов `shared`, `extension`, `server`.
+- `npm test` — все тесты Vitest (`extension/test` в jsdom, `server/test` в Node).
+
 <!-- TODO: заполнить, когда появятся скрипты. Например:
 - `npm run dev:server` — запуск локального сервера
 - `npm run build:extension` — сборка расширения для «Загрузить распакованное»
