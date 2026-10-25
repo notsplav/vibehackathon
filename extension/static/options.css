@@ -1,0 +1,32 @@
+/* Страница настроек: использует токены цветов из sidepanel.css. */
+body.options { min-height: 0; display: block; }
+body.options main { padding: 12px 16px 16px; max-width: 640px; }
+.card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 0 0 10px; }
+.choices { display: grid; gap: 6px; margin-bottom: 10px; }
+.choice { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.choice.is-selected { border-color: var(--accent); background: var(--active-soft); }
+.choice.is-disabled { cursor: default; opacity: .65; }
+.choice input { margin-top: 3px; accent-color: var(--accent); }
+.choice-body { display: grid; gap: 2px; }
+.choice-label { font-weight: 600; }
+.choice-note { font-size: 12px; color: var(--muted); }
+.field { display: grid; gap: 6px; margin-top: 10px; }
+.field-label { font-size: 12px; color: var(--muted); }
+select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; max-width: 320px; }
+.engines { display: flex; flex-wrap: wrap; gap: 6px; }
+.engine { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; cursor: pointer; }
+.engine:has(input:checked) { border-color: var(--accent); background: var(--active-soft); }
+.engine input { accent-color: var(--accent); margin: 0; }
+.engines-footer { display: flex; gap: 10px; align-items: center; margin-top: 6px; font-size: 12px; }
+button.link { border: 0; padding: 0; background: none; color: var(--accent); font-size: 12px; cursor: pointer; }
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; width: max-content; }
+.segmented button { border: 0; border-radius: 0; padding: 5px 14px; }
+.segmented button + button { border-left: 1px solid var(--border); }
+.segmented button.is-selected { background: var(--accent); color: #fff; }
+.actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.actions .primary { border-radius: 999px; padding: 8px 18px; font-weight: 600; }
+.status { font-size: 13px; }
+.status.ok { color: var(--supported); }
+.status.error { color: var(--danger); }
+.footnote { font-size: 12px; color: var(--muted); margin-top: 14px; }

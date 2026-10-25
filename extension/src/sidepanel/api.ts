@@ -1,6 +1,6 @@
 // Обращения к локальному серверу. Ключ Gemini здесь не используется и не хранится.
 
-import type { AnalysisState, CreateAnalysisResponse, ExtractedArticle, HealthResponse } from "../../../shared/contract.ts";
+import type { AnalysisState, CreateAnalysisResponse, ExtractedArticle, HealthResponse, ServerSettings, SettingsResponse } from "../../../shared/contract.ts";
 import { SERVER_URL } from "../messages.ts";
 
 export class ApiError extends Error {
@@ -12,7 +12,7 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${SERVER_URL}${path}`, {
@@ -35,4 +35,6 @@ export const api = {
   get: (id: string) => call<AnalysisState>("GET", `/api/analyses/${id}`),
   cancel: (id: string) => call<AnalysisState>("POST", `/api/analyses/${id}/cancel`),
   remove: (id: string) => call<void>("DELETE", `/api/analyses/${id}`),
+  settings: () => call<SettingsResponse>("GET", "/api/settings"),
+  saveSettings: (settings: ServerSettings) => call<SettingsResponse>("PUT", "/api/settings", settings),
 };
