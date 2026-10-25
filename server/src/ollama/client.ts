@@ -1,5 +1,5 @@
-// Адаптер локальной модели Ollama и Ollama Web Search. Модель работает локально; в интернет уходят
-// только поисковые запросы (на ollama.com). Источники берутся только из результатов поиска,
+// Адаптер локальной модели Ollama. Модель работает локально; в интернет уходят только поисковые запросы
+// (SearXNG или Ollama Web Search). Источники берутся только из результатов поиска,
 // модель может лишь сослаться на их номера — ссылкам из её текста сервер не доверяет.
 
 import type { Block, Verdict } from "../../../shared/contract.ts";
@@ -10,29 +10,21 @@ import { DEFAULT_RETRY, type RetryPolicy, parseJson, withRetry } from "../llm/re
 import type { ArticleContext, CheckInput, CheckOutcome, FactChecker, StepCallback, SummaryInput } from "../llm/types.ts";
 import type { RawClaim } from "../pipeline/claims.ts";
 import type { Citation, SourceAssessment } from "../pipeline/evidence.ts";
+import type { SearchProvider } from "../search/types.ts";
 
-export const WEB_SEARCH_URL = "https://ollama.com/api/web_search";
 const CHAT_TIMEOUT_MS = 300_000;
-const SEARCH_TIMEOUT_MS = 30_000;
-const RESULTS_PER_QUERY = 5;
-const MAX_QUERIES = 3;
 const MAX_SOURCES = 8;
 const SNIPPET_CHARS = 1500;
 
 export interface OllamaOptions {
   host: string;
   model: string;
-  /** Ключ Ollama Web Search; отправляется только на ollama.com, не в локальную модель. */
-  apiKey: string | null;
   numCtx: number;
+  search: SearchProvider;
+  /** Сколько поисковых запросов составлять на одно утверждение. */
+  queriesPerClaim: number;
   retry?: RetryPolicy;
   fetch?: typeof fetch;
-}
-
-interface SearchResult {
-  title?: unknown;
-  url?: unknown;
-  content?: unknown;
 }
 
 async function httpError(res: Response): Promise<Error & { status: number }> {
@@ -88,27 +80,6 @@ export class OllamaFactChecker implements FactChecker {
     );
   }
 
-  async search(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
-    const key = this.opts.apiKey;
-    if (!key) throw new ModelError("auth", "OLLAMA_API_KEY не задан");
-    return withRetry(
-      async () => {
-        const res = await this.fetch(WEB_SEARCH_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-          body: JSON.stringify({ query, max_results: RESULTS_PER_QUERY }),
-          signal: this.timeoutSignal(SEARCH_TIMEOUT_MS, signal),
-        });
-        if (!res.ok) throw await httpError(res);
-        const data = (await res.json()) as { results?: unknown };
-        return Array.isArray(data?.results) ? (data.results as SearchResult[]) : [];
-      },
-      this.retry,
-      key,
-      signal,
-    );
-  }
-
   async extractClaims(article: ArticleContext, blocks: Block[], signal?: AbortSignal): Promise<RawClaim[]> {
     const input = JSON.stringify({
       title: article.title,
@@ -132,7 +103,7 @@ export class OllamaFactChecker implements FactChecker {
     const queries = (Array.isArray(q?.queries) ? q.queries : [])
       .filter((x): x is string => typeof x === "string" && x.trim().length > 2)
       .map((x) => x.trim().slice(0, 300))
-      .slice(0, MAX_QUERIES);
+      .slice(0, this.opts.queriesPerClaim);
     if (queries.length === 0) queries.push(input.claim.slice(0, 300));
     onStep?.("search", queries);
 
@@ -140,16 +111,11 @@ export class OllamaFactChecker implements FactChecker {
     const seen = new Set<string>();
     let index = 0;
     for (const query of queries) {
-      for (const r of await this.search(query, signal)) {
+      for (const r of await this.opts.search.search(query, signal)) {
         const current = index++;
-        if (typeof r.url !== "string" || !/^https?:\/\//i.test(r.url) || seen.has(r.url)) continue;
+        if (seen.has(r.url)) continue;
         seen.add(r.url);
-        citations.push({
-          url: r.url,
-          title: typeof r.title === "string" && r.title.trim() ? r.title.trim().slice(0, 300) : null,
-          annotationIndex: current,
-          citedText: typeof r.content === "string" ? r.content.slice(0, SNIPPET_CHARS) : null,
-        });
+        citations.push({ url: r.url, title: r.title, annotationIndex: current, citedText: r.content?.slice(0, SNIPPET_CHARS) ?? null });
       }
       if (citations.length >= MAX_SOURCES) break;
     }
@@ -193,8 +159,8 @@ function hostOf(url: string): string | null {
   }
 }
 
-/** Состояние локальной Ollama для /api/health: запущена ли и скачана ли модель. */
-export async function ollamaProblem(opts: Pick<OllamaOptions, "host" | "model" | "apiKey" | "fetch">): Promise<string | null> {
+/** Состояние локальной Ollama и поиска для /api/health: запущена ли, скачана ли модель, доступен ли поиск. */
+export async function ollamaProblem(opts: Pick<OllamaOptions, "host" | "model" | "search" | "fetch">): Promise<string | null> {
   const f = opts.fetch ?? fetch;
   let models: string[];
   try {
@@ -206,6 +172,5 @@ export async function ollamaProblem(opts: Pick<OllamaOptions, "host" | "model" |
   }
   const wanted = opts.model.includes(":") ? opts.model : `${opts.model}:latest`;
   if (!models.includes(wanted)) return `Модель ${opts.model} не скачана: выполните ollama pull ${opts.model}.`;
-  if (!opts.apiKey) return "OLLAMA_API_KEY не задан: без веб-поиска утверждения нельзя проверить по источникам.";
-  return null;
+  return opts.search.problem();
 }
