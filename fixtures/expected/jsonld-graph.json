@@ -1,0 +1,55 @@
+{
+  "description": "@graph, типы полными URI, автор по ссылке @id, текст разделён рекламным блоком, похожие записи внутри <article>.",
+  "source": {
+    "file": "fixtures/pages/jsonld-graph.html"
+  },
+  "url": "https://blog.example.test/2026/10/novyj-vid-strekoz/",
+  "expected": {
+    "status": "ok",
+    "method": "jsonld+dom",
+    "pageType": "article",
+    "language": "ru",
+    "canonicalUrl": "https://blog.example.test/2026/10/novyj-vid-strekoz/",
+    "metadata": {
+      "title": "Учёные описали новый вид стрекоз",
+      "subtitle": null,
+      "authors": [
+        {
+          "name": "Мария Ковалёва",
+          "type": "person",
+          "source": "jsonld.author",
+          "quality": "confirmed"
+        }
+      ],
+      "publishedAt": {
+        "value": "2026-10-01T18:45:00+03:00",
+        "source": "jsonld.datePublished",
+        "quality": "confirmed"
+      },
+      "modifiedAt": null
+    },
+    "blocks": [
+      {
+        "type": "title",
+        "text": "Учёные описали новый вид стрекоз"
+      },
+      {
+        "type": "paragraph",
+        "text": "Энтомологи из университета описали новый вид стрекоз, найденный в долине горной реки во время летней экспедиции."
+      },
+      {
+        "type": "paragraph",
+        "text": "По словам исследователей, у насекомого необычная окраска крыльев, которая меняется в зависимости от освещения."
+      },
+      {
+        "type": "paragraph",
+        "text": "Описание вида опубликовано в научном журнале, а типовые экземпляры переданы в зоологический музей."
+      },
+      {
+        "type": "paragraph",
+        "text": "Учёные планируют вернуться в долину следующим летом, чтобы оценить численность популяции."
+      }
+    ],
+    "warnings": []
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "description": "Повреждённый JSON-LD и JSON-LD чужой статьи: метаданные из meta, текст по DOM.",
+  "source": {
+    "file": "fixtures/pages/broken-jsonld.html"
+  },
+  "url": "https://culture.example.test/2026/03/02/premera/",
+  "expected": {
+    "status": "ok",
+    "method": "dom",
+    "pageType": "article",
+    "language": "ru",
+    "canonicalUrl": null,
+    "metadata": {
+      "title": "Театр показал премьеру по пьесе Чехова",
+      "subtitle": null,
+      "authors": [
+        {
+          "name": "Светлана Белова",
+          "type": "person",
+          "source": "meta.author",
+          "quality": "confirmed"
+        }
+      ],
+      "publishedAt": {
+        "value": "2026-03-02T19:00:00+03:00",
+        "source": "meta.article:published_time",
+        "quality": "confirmed"
+      },
+      "modifiedAt": null
+    },
+    "blocks": [
+      {
+        "type": "title",
+        "text": "Театр показал премьеру по пьесе Чехова"
+      },
+      {
+        "type": "paragraph",
+        "text": "Драматический театр представил новую постановку «Вишнёвого сада». Спектакль поставил приглашённый режиссёр, который впервые работает с труппой."
+      },
+      {
+        "type": "paragraph",
+        "text": "Премьерные показы прошли с аншлагом: билеты на первые три вечера разошлись за неделю до премьеры."
+      },
+      {
+        "type": "paragraph",
+        "text": "Следующие показы запланированы на конец марта, сообщили в пресс-службе театра."
+      }
+    ],
+    "warnings": [
+      "jsonld[0]: некорректный JSON, блок пропущен",
+      "jsonld: нет Article, относящегося к этой странице"
+    ]
+  }
+}
