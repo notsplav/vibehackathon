@@ -3,6 +3,7 @@
 
 import type { Claim } from "../../../shared/contract.ts";
 import { type DisplayState, LABELS, blockState, displayState } from "../labels.ts";
+import { HIGHLIGHT_CSS } from "./highlight.ts";
 
 export const STATUS_ATTR = "data-vh-status";
 const ICON_ATTR = "data-vh-icon";
@@ -41,8 +42,9 @@ function ensureStyle(doc: Document): void {
     `[${STATUS_ATTR}="checking"]{animation:vh-pulse 1.6s ease-in-out infinite}` +
     `@media (prefers-reduced-motion: reduce){[${STATUS_ATTR}="checking"]{animation:none}}` +
     `[${STATUS_ATTR}="failed"]{box-shadow:inset 3px 0 0 #8c959f;outline:1px dashed #8c959f;outline-offset:2px}` +
-    `[${STATUS_ATTR}]::after{content:attr(${ICON_ATTR});font:600 0.8em/1 system-ui,sans-serif;margin-left:.35em;vertical-align:super}` +
-    rules;
+    `[${STATUS_ATTR}]::after{content:attr(${ICON_ATTR});font:600 13px/1 system-ui,sans-serif;margin-left:.35em;vertical-align:super}` +
+    rules +
+    HIGHLIGHT_CSS;
   (doc.head ?? doc.documentElement).appendChild(style);
 }
 

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { Claim } from "../../shared/contract.ts";
+import { groupClaims } from "../src/content/card.ts";
 import { handleClick, handleMessage } from "../src/content/index.ts";
 import { ROOT } from "./fixtures.ts";
 import { loadDocument } from "./load.ts";
@@ -63,7 +64,15 @@ describe("маркеры и карточка на живой странице", 
     el.dispatchEvent(click);
     handleClick(win, click);
     const card = doc.getElementById("vh-factcheck-card")!.shadowRoot!;
-    expect(card.textContent).toContain("Утверждений в блоке: 2");
+    expect(card.textContent).toContain("2 утверждения в этом блоке");
+    // Сначала то, что ещё не подтверждено; раскрыто первое утверждение.
+    const items = Array.from(card.querySelectorAll("details"));
+    expect(items.map((d) => d.querySelector(".text")!.textContent)).toEqual(["детская литература занимает треть", "Фонд библиотеки насчитывает около 40 тысяч книг"]);
+    expect(items.map((d) => d.open)).toEqual([true, false]);
+    // Карточка привязана к документу под абзацем, а не к окну.
+    const host = doc.getElementById("vh-factcheck-card")!;
+    expect(host.parentElement).toBe(doc.documentElement);
+    expect(host.style.position).toBe("absolute");
     expect(card.textContent).toContain('<img src=x onerror="alert(1)"> объяснение');
     expect(card.querySelector("img")).toBeNull();
     expect(Array.from(card.querySelectorAll("a")).map((a) => a.getAttribute("href"))).toEqual(["https://city.example.org/n/1"]);
@@ -86,5 +95,31 @@ describe("маркеры и карточка на живой странице", 
     handleMessage(win, { type: "vh:clear" });
     expect(doc.querySelectorAll("[data-vh-status]").length).toBe(0);
     expect(doc.getElementById("vh-factcheck-style")).toBeNull();
+  });
+});
+
+describe("группировка утверждений в карточке", () => {
+  const blocks = new Map([
+    ["b1", { type: "title" as const, order: 1 }],
+    ["b2", { type: "subtitle" as const, order: 2 }],
+    ["b3", { type: "paragraph" as const, order: 3 }],
+  ]);
+  const died = claim("c1", "b2", "умер на 42-м году жизни", { verdict: "contradicted", occurrences: [{ blockId: "b2", exactText: "умер на 42-м году жизни" }, { blockId: "b3", exactText: "умер на 42-м году жизни." }], blockIds: ["b2", "b3"] });
+  const tass = claim("c2", "b3", "Об этом сообщает ТАСС.");
+  const opinion = claim("c3", "b3", "Это большая потеря", { status: "opinion", verdict: null });
+
+  test("утверждение из подзаголовка в абзаце — повтор, а не новое; мнения отдельно", () => {
+    const g = groupClaims("b3", [died, tass, opinion], blocks);
+    expect(g.own.map((c) => c.id)).toEqual(["c2"]);
+    expect(g.repeats).toEqual([{ claim: died, where: "в подзаголовке" }]);
+    expect(g.opinions.map((c) => c.id)).toEqual(["c3"]);
+    expect(groupClaims("b2", [died], blocks).own.map((c) => c.id)).toEqual(["c1"]);
+  });
+
+  test("свои утверждения отсортированы от проблемных к подтверждённым", () => {
+    const ok = claim("c4", "b3", "a");
+    const bad = claim("c5", "b3", "b", { verdict: "contradicted" });
+    const unclear = claim("c6", "b3", "c", { verdict: "insufficient" });
+    expect(groupClaims("b3", [ok, unclear, bad], blocks).own.map((c) => c.id)).toEqual(["c5", "c6", "c4"]);
   });
 });

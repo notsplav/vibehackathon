@@ -82,3 +82,40 @@ test("длинная статья делится на части с перекр
   const chunks = chunkBlocks(many, 1000);
   expect(chunks.map((c) => c.map((b) => b.id))).toEqual([["b1", "b2"], ["b2", "b3"], ["b3", "b4"], ["b4", "b5"]]);
 });
+
+describe("разные факты не склеиваются", () => {
+  const actor: Block[] = [
+    { id: "b1", type: "subtitle", order: 1, text: "Актер театра «Чеховская студия» Владимир Курочкин умер на 42-м году жизни", links: [] },
+    { id: "b2", type: "paragraph", order: 2, text: "Владимир Курочкин родился 20 декабря 1984 года. Он снялся в фильме «Все по закону».", links: [] },
+  ];
+
+  test("фрагмент с чужими числами не привязывается к утверждению", () => {
+    const { claims } = validateClaims(
+      [
+        {
+          occurrences: [
+            { blockId: "b1", exactText: "Актер театра «Чеховская студия» Владимир Курочкин" },
+            { blockId: "b2", exactText: "Владимир Курочкин родился 20 декабря 1984 года." },
+          ],
+          normalizedClaim: "Владимир Курочкин был актером театра «Чеховская студия»",
+          kind: "event",
+          isOpinion: false,
+        },
+      ],
+      actor,
+    );
+    expect(claims[0]!.occurrences.map((o) => o.blockId)).toEqual(["b1"]);
+  });
+
+  test("общий фрагмент не объединяет утверждения о разных фактах", () => {
+    const fragment = { blockId: "b2", exactText: "Владимир Курочкин родился 20 декабря 1984 года." };
+    const { claims } = validateClaims(
+      [
+        { occurrences: [fragment], normalizedClaim: "Владимир Курочкин родился 20 декабря 1984 года", kind: "date", isOpinion: false },
+        { occurrences: [fragment], normalizedClaim: "Курочкин был актером театра «Чеховская студия»", kind: "event", isOpinion: false },
+      ],
+      actor,
+    );
+    expect(mergeDuplicates(claims, actor)).toHaveLength(2);
+  });
+});

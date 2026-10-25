@@ -6,11 +6,13 @@ import { textFingerprint } from "../extract/blocks.ts";
 import { extractArticle } from "../extract/index.ts";
 import { visibleText } from "../extract/text.ts";
 import type { ExtractReply, PanelMessage, RenderReply } from "../messages.ts";
-import { closeCard, openCard } from "./card.ts";
+import { type BlockInfo, closeCard, openCard } from "./card.ts";
 import { STATUS_ATTR, applyMarkers, claimsByBlock, clearMarkers } from "./markers.ts";
 
 interface ContentState {
   elements: Map<string, Element>;
+  /** Тип и порядок блоков: карточка знает, где утверждение встретилось впервые. */
+  blocks: Map<string, BlockInfo>;
   fingerprint: string;
   claims: Claim[];
 }
@@ -35,7 +37,7 @@ export function handleMessage(win: WindowWithState, msg: PanelMessage): ExtractR
       clearMarkers(doc);
       closeCard(doc);
       const { article, elements, fingerprint } = extractArticle(doc, win.location.href);
-      holder.state = { elements, fingerprint, claims: [] };
+      holder.state = { elements, fingerprint, claims: [], blocks: new Map(article.blocks.map((b) => [b.id, { type: b.type, order: b.order }])) };
       return { ok: true, article, fingerprint };
     }
     case "vh:render": {
@@ -55,7 +57,8 @@ export function handleMessage(win: WindowWithState, msg: PanelMessage): ExtractR
       if (!el || !holder.state) return { ok: false, error: "Блок не найден на странице" };
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       const claims = claimsByBlock(holder.state.claims).get(msg.blockId) ?? [];
-      if (claims.length > 0) setTimeout(() => openCard(el, claims, msg.blockId), 350);
+      const blocks = holder.state.blocks;
+      if (claims.length > 0) setTimeout(() => openCard(el, msg.blockId, claims, blocks), 350);
       return { ok: true };
     }
     case "vh:clear": {
@@ -80,7 +83,7 @@ export function handleClick(win: WindowWithState, event: MouseEvent): void {
   for (const [blockId, el] of state.elements) {
     if (el !== block) continue;
     const claims = claimsByBlock(state.claims).get(blockId) ?? [];
-    if (claims.length > 0) openCard(el, claims, blockId);
+    if (claims.length > 0) openCard(el, blockId, claims, state.blocks);
     return;
   }
 }
