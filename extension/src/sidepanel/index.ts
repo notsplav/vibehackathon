@@ -290,11 +290,12 @@ function claimItem(c: Claim, a: AnalysisState): HTMLElement {
   return item;
 }
 
-function privacyText(health: HealthResponse | null): string {
-  if (health?.provider === "ollama") {
-    return `Текст статьи обработает локальная модель ${health.model}. В интернет уходят только поисковые запросы. Без нажатия кнопки ничего не отправляется.`;
-  }
-  return "Текст статьи уйдёт через локальный сервер в Gemini API для поиска источников. Без нажатия кнопки ничего не отправляется.";
+/** Чем будет проверяться статья: модель и поиск, по ответу сервера. */
+function engineInfo(health: HealthResponse | null): HTMLElement {
+  const info = h("dl", { cls: "engine" });
+  if (!health) return info;
+  info.append(h("dt", { text: "Модель:" }), h("dd", { text: health.model }), h("dt", { text: "Поиск:" }), h("dd", { text: health.search }));
+  return info;
 }
 
 /** Стартовый экран: одна кнопка по центру панели и короткое пояснение под ней. */
@@ -303,7 +304,7 @@ function startScreen(): HTMLElement {
     "section",
     { cls: "start" },
     button("Начать проверку", () => void analyze(false), "primary cta"),
-    h("p", { cls: "privacy", text: privacyText(view.health) }),
+    engineInfo(view.health),
   );
 }
 
