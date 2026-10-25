@@ -7,7 +7,7 @@ import { VERDICTS } from "../../../shared/contract.ts";
 import { ModelError } from "../llm/errors.ts";
 import { EXTRACT_SCHEMA, EXTRACT_SYSTEM, QUERY_SCHEMA, QUERY_SYSTEM, SUMMARY_SYSTEM, VERDICT_SCHEMA, VERDICT_SYSTEM } from "../llm/prompts.ts";
 import { DEFAULT_RETRY, type RetryPolicy, parseJson, withRetry } from "../llm/retry.ts";
-import type { ArticleContext, CheckInput, CheckOutcome, FactChecker, SummaryInput } from "../llm/types.ts";
+import type { ArticleContext, CheckInput, CheckOutcome, FactChecker, StepCallback, SummaryInput } from "../llm/types.ts";
 import type { RawClaim } from "../pipeline/claims.ts";
 import type { Citation, SourceAssessment } from "../pipeline/evidence.ts";
 
@@ -120,7 +120,8 @@ export class OllamaFactChecker implements FactChecker {
     return parsed.claims as RawClaim[];
   }
 
-  async checkClaim(input: CheckInput, signal?: AbortSignal): Promise<CheckOutcome> {
+  async checkClaim(input: CheckInput, signal?: AbortSignal, onStep?: StepCallback): Promise<CheckOutcome> {
+    onStep?.("queries");
     const context = {
       claim: input.claim,
       kind: input.kind,
@@ -133,6 +134,7 @@ export class OllamaFactChecker implements FactChecker {
       .map((x) => x.trim().slice(0, 300))
       .slice(0, MAX_QUERIES);
     if (queries.length === 0) queries.push(input.claim.slice(0, 300));
+    onStep?.("search", queries);
 
     const citations: Citation[] = [];
     const seen = new Set<string>();
@@ -156,6 +158,7 @@ export class OllamaFactChecker implements FactChecker {
     if (citations.length === 0) {
       return { verdict: "insufficient", explanation: "Поиск не нашёл источников по этому утверждению.", sources: [], citations, interactionId: null, searchQueries: queries };
     }
+    onStep?.("verdict", queries);
     const verdictInput = JSON.stringify({
       ...context,
       sources: citations.map((c, i) => ({ index: i + 1, title: c.title, url: c.url, content: c.citedText })),

@@ -160,7 +160,7 @@ export function createApp({ config, store, runner, problem }: AppDeps): Server {
     if (parts.length === 3 && req.method === "GET") {
       const state = store.getState(id);
       if (!state) throw new HttpError(404, "Анализ не найден");
-      return send(res, 200, state);
+      return send(res, 200, { ...state, live: runner.progress(id) });
     }
     if (parts.length === 4 && parts[3] === "cancel" && req.method === "POST") {
       if (!runner.cancel(id)) throw new HttpError(404, "Анализ не найден");

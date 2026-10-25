@@ -8,7 +8,7 @@ import { VERDICTS } from "../../../shared/contract.ts";
 import { ModelError } from "../llm/errors.ts";
 import { EXTRACT_SCHEMA, EXTRACT_SYSTEM, SEARCH_SYSTEM, SUMMARY_SYSTEM, VERDICT_SCHEMA, VERDICT_SYSTEM } from "../llm/prompts.ts";
 import { DEFAULT_RETRY, type RetryPolicy, parseJson, withRetry } from "../llm/retry.ts";
-import type { ArticleContext, CheckInput, CheckOutcome, FactChecker, SummaryInput } from "../llm/types.ts";
+import type { ArticleContext, CheckInput, CheckOutcome, FactChecker, StepCallback, SummaryInput } from "../llm/types.ts";
 import type { RawClaim } from "../pipeline/claims.ts";
 import { type InteractionLike, type SourceAssessment, extractCitations, outputText } from "../pipeline/evidence.ts";
 
@@ -65,7 +65,8 @@ export class GeminiFactChecker implements FactChecker {
     return parsed.claims as RawClaim[];
   }
 
-  async checkClaim(input: CheckInput, signal?: AbortSignal): Promise<CheckOutcome> {
+  async checkClaim(input: CheckInput, signal?: AbortSignal, onStep?: StepCallback): Promise<CheckOutcome> {
+    onStep?.("search");
     const site = (() => {
       try {
         return new URL(input.article.url).hostname;
@@ -93,6 +94,7 @@ export class GeminiFactChecker implements FactChecker {
       return step?.type === "google_search_call" && Array.isArray(step.arguments?.queries) ? (step.arguments!.queries as string[]) : [];
     });
 
+    onStep?.("verdict", searchQueries);
     const verdictCall = await this.create(
       {
         system_instruction: VERDICT_SYSTEM,

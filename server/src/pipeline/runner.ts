@@ -1,6 +1,7 @@
 // Очередь анализа: этап A (claims), этап B (проверка с ограниченным параллелизмом), этап C (сводка).
 // Всё состояние — в SQLite, поэтому панель может переподключиться по analysisId в любой момент.
 
+import type { LiveProgress } from "../../../shared/contract.ts";
 import type { Store } from "../db/store.ts";
 import { now } from "../db/store.ts";
 import { ModelError, type ModelErrorKind, type Provider, classifyError, userMessage } from "../llm/errors.ts";
@@ -38,6 +39,8 @@ interface RunState {
 
 export class AnalysisRunner {
   private readonly running = new Map<string, RunState>();
+  /** Живой ход идущих анализов; в SQLite не пишется, после перезапуска начинается заново. */
+  private readonly live = new Map<string, LiveProgress>();
   private readonly store: Store;
   private readonly checker: FactChecker | null;
   private readonly options: RunnerOptions;
@@ -59,10 +62,16 @@ export class AnalysisRunner {
     return this.running.has(id);
   }
 
+  progress(id: string): LiveProgress | null {
+    const live = this.live.get(id);
+    return live ? structuredClone(live) : null;
+  }
+
   start(id: string): void {
     if (this.running.has(id)) return;
     const state: RunState = { controller: new AbortController(), cancelled: false };
     this.running.set(id, state);
+    this.live.set(id, { extraction: null, checking: [] });
     this.run(id, state)
       .catch((e) => {
         // Анализ мог быть удалён во время работы — тогда писать уже некуда.
@@ -72,7 +81,10 @@ export class AnalysisRunner {
         this.store.moveClaims(id, ["queued", "checking"], "failed", this.message(err.kind));
         this.store.setStatus(id, "failed", this.message(err.kind));
       })
-      .finally(() => this.running.delete(id));
+      .finally(() => {
+        this.running.delete(id);
+        this.live.delete(id);
+      });
   }
 
   /** Останавливает ещё не начатые проверки; уже готовые результаты сохраняются. */
@@ -119,13 +131,20 @@ export class AnalysisRunner {
     if (!row) return;
     const article = { title: row.metadata.title, publishedAt: row.metadata.publishedAt?.value ?? null, url: row.canonicalUrl ?? row.url };
     const blocks = this.store.getBlocks(id);
+    const live = this.live.get(id)!;
+    const tag = `analysis ${id.slice(0, 8)}`;
+    const started = Date.now();
 
     // --- Этап A ---
     if (this.store.getClaims(id).length === 0) {
       this.store.setStatus(id, "extracting_claims");
       const raw = [];
-      for (const chunk of chunkBlocks(checkableBlocks(blocks), this.options.chunkChars)) {
+      const chunks = chunkBlocks(checkableBlocks(blocks), this.options.chunkChars);
+      live.extraction = { done: 0, total: chunks.length };
+      this.log.info(`${tag}: выделяем утверждения из ${blocks.length} блоков (частей: ${chunks.length}) — «${article.title ?? article.url}»`);
+      for (const chunk of chunks) {
         raw.push(...(await this.checker.extractClaims(article, chunk, signal)));
+        live.extraction.done++;
         if (state.cancelled) break;
       }
       const report = validateClaims(raw, blocks);
@@ -145,6 +164,8 @@ export class AnalysisRunner {
           status: c.isOpinion ? "opinion" : state.cancelled ? "not_checked" : "queued",
         })),
       );
+      const opinions = merged.filter((c) => c.isOpinion).length;
+      this.log.info(`${tag}: найдено утверждений ${merged.length - opinions}, мнений ${opinions} (${seconds(started)} с)`);
       if (state.cancelled) return;
     }
 
@@ -162,6 +183,9 @@ export class AnalysisRunner {
         const claim = claims.get(claimId);
         if (!claim) continue;
         this.store.updateClaim(id, claimId, { status: "checking" });
+        const current: LiveProgress["checking"][number] = { claimId, step: "search", since: now(), queries: [] };
+        live.checking.push(current);
+        const claimStarted = Date.now();
         try {
           const outcome = await this.checker!.checkClaim(
             {
@@ -171,6 +195,10 @@ export class AnalysisRunner {
               article,
             },
             signal,
+            (step, queries) => {
+              current.step = step;
+              if (queries) current.queries = queries.slice(0, 5);
+            },
           );
           const decision = decideVerdict({
             verdict: outcome.verdict,
@@ -190,11 +218,13 @@ export class AnalysisRunner {
             error: null,
             checkedAt: now(),
           });
+          this.log.info(`${tag}: ${claimId} → ${decision.verdict}, источников ${decision.evidence.length} (${seconds(claimStarted)} с)`);
           lastRetryable = null;
         } catch (e) {
           if (signal.aborted) return;
           const err = e instanceof ModelError ? e : classifyError(e, this.options.apiKey);
           this.store.updateClaim(id, claimId, { status: "failed", error: this.message(err.kind), checkedAt: now() });
+          this.log.warn(`${tag}: ${claimId} → ошибка ${err.kind} (${seconds(claimStarted)} с)`);
           if (err.fatal) fatal = this.message(err.kind);
           else if (err.retryable) {
             lastRetryable = lastRetryable?.kind === err.kind ? { kind: err.kind, count: lastRetryable.count + 1 } : { kind: err.kind, count: 1 };
@@ -202,12 +232,15 @@ export class AnalysisRunner {
               fatal = this.message(err.kind === "rate_limited" ? "quota_exhausted" : err.kind);
             }
           }
+        } finally {
+          live.checking = live.checking.filter((c) => c !== current);
         }
       }
     };
     await Promise.all(Array.from({ length: this.options.concurrency }, worker));
     if (signal.aborted || state.cancelled) return;
 
+    this.log.info(`${tag}: проверка ${fatal ? "остановлена" : "завершена"} за ${seconds(started)} с${fatal ? ` — ${fatal}` : ""}`);
     if (fatal) {
       // Остальные проверки не запускаем: результат был бы тем же, а квота тратилась бы впустую.
       this.store.moveClaims(id, ["queued"], "failed", fatal);
@@ -233,4 +266,8 @@ export class AnalysisRunner {
       this.log.warn(`analysis ${id}: summary failed (${classifyError(e, this.options.apiKey).kind})`);
     }
   }
+}
+
+function seconds(since: number): number {
+  return Math.round((Date.now() - since) / 1000);
 }
