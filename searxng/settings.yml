@@ -23,6 +23,29 @@ search:
     - html
     - json
 
+  # Блокировка поисковика после ошибки по умолчанию длится от 3 минут до часа; для локальной проверки — короче.
+  suspended_times:
+    SearxEngineAccessDenied: 60
+    SearxEngineCaptcha: 300
+    SearxEngineTooManyRequests: 60
+    cf_SearxEngineCaptcha: 300
+    cf_SearxEngineAccessDenied: 60
+    recaptcha_SearxEngineCaptcha: 300
+
+# По умолчанию включено мало веб-поисковиков, и при частых запросах все они быстро блокируются.
+# Чем больше источников выдачи, тем реже пустые ответы.
+engines:
+  - name: google
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: yahoo
+    disabled: false
+  - name: yandex
+    disabled: false
+  - name: qwant
+    disabled: false
+
 outgoing:
   request_timeout: 5.0
   max_request_timeout: 10.0
