@@ -44,3 +44,9 @@ npm run typecheck
 ```
 
 Эталонная статья Lenta.ru в репозиторий не входит. Как сохранить её локально, описано в [`fixtures/README.md`](fixtures/README.md).
+
+
+Ссылки на наши сайты для проверки:
+1. https://notsplav.github.io/vibehackathon/   - полностью достоверная
+2. https://notsplav.github.io/vibehackathon/index2   - есть неточности
+3. https://notsplav.github.io/vibehackathon/index3   - ии фейк
