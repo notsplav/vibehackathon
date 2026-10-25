@@ -10,7 +10,7 @@ const claim = (id: string, patch: Partial<Claim> = {}): Claim => ({
 function state(patch: Partial<AnalysisState>): AnalysisState {
   const claims = patch.claims ?? [];
   return {
-    analysisId: "a", status: "checking", preliminary: true, url: "https://example.test/", canonicalUrl: null,
+    analysisId: "a", status: "checking", focus: null, preliminary: true, url: "https://example.test/", canonicalUrl: null,
     metadata: { title: "T", subtitle: null, authors: [], publishedAt: null, modifiedAt: null }, claims,
     stats: { total: 4, completed: 2, notCompleted: 2, byVerdict: { supported: 1, contradicted: 0, qualified: 0, disputed: 0, insufficient: 1 }, failed: 0, notChecked: 0, opinions: 1 },
     summary: null, error: null, live: null, createdAt: "2026-10-25T12:00:00Z", updatedAt: "2026-10-25T12:01:00Z", ...patch,

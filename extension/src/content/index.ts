@@ -8,6 +8,7 @@ import { visibleText } from "../extract/text.ts";
 import type { ExtractReply, PanelMessage, RenderReply } from "../messages.ts";
 import { type BlockInfo, closeCard, openCard } from "./card.ts";
 import { STATUS_ATTR, applyMarkers, claimsByBlock, clearMarkers } from "./markers.ts";
+import { selectionArticle } from "./selection.ts";
 
 interface ContentState {
   elements: Map<string, Element>;
@@ -39,6 +40,19 @@ export function handleMessage(win: WindowWithState, msg: PanelMessage): ExtractR
       const { article, elements, fingerprint } = extractArticle(doc, win.location.href);
       holder.state = { elements, fingerprint, claims: [], blocks: new Map(article.blocks.map((b) => [b.id, { type: b.type, order: b.order }])) };
       return { ok: true, article, fingerprint };
+    }
+    case "vh:extract-selection": {
+      clearMarkers(doc);
+      closeCard(doc);
+      const result = selectionArticle(win, msg.hint, msg.onlyHint === true);
+      if (!result.ok) return result;
+      holder.state = {
+        elements: result.elements,
+        fingerprint: result.fingerprint,
+        claims: [],
+        blocks: new Map(result.article.blocks.map((b) => [b.id, { type: b.type, order: b.order }])),
+      };
+      return { ok: true, article: result.article, fingerprint: result.fingerprint };
     }
     case "vh:render": {
       const state = holder.state;
