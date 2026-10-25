@@ -72,6 +72,7 @@
 - `npm install` — установить зависимости всех пакетов (`extension`, `server`).
 - `npm run typecheck` — проверка типов `shared`, `extension`, `server`.
 - `npm test` — все тесты Vitest (`extension/test` в jsdom, `server/test` в Node).
+- `UPDATE_EXPECTED=1 npm test` — перезаписать `fixtures/expected/` фактическим результатом извлечения (только после намеренного изменения алгоритма, дифф проверять вручную). Подробнее — `fixtures/README.md`.
 
 <!-- TODO: заполнить, когда появятся скрипты. Например:
 - `npm run dev:server` — запуск локального сервера

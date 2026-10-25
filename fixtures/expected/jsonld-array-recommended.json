@@ -1,0 +1,89 @@
+{
+  "description": "JSON-LD-массив, рекомендованная статья первой; два автора; реклама, рекомендации, комментарии и скрытый абзац.",
+  "source": {
+    "file": "fixtures/pages/jsonld-array-recommended.html"
+  },
+  "url": "https://news.example.test/city/2026/09/14/biblioteka/",
+  "expected": {
+    "status": "ok",
+    "method": "jsonld+dom",
+    "pageType": "article",
+    "language": "ru",
+    "canonicalUrl": "https://news.example.test/city/2026/09/14/biblioteka/",
+    "metadata": {
+      "title": "В Заречье открылась новая библиотека",
+      "subtitle": "Здание на 1200 квадратных метров построили за два года на месте бывшего кинотеатра",
+      "authors": [
+        {
+          "name": "Анна Петрова",
+          "type": "person",
+          "source": "jsonld.author",
+          "quality": "confirmed"
+        },
+        {
+          "name": "Игорь Смирнов",
+          "type": "person",
+          "source": "jsonld.author",
+          "quality": "confirmed"
+        }
+      ],
+      "publishedAt": {
+        "value": "2026-09-14T09:30:00+05:00",
+        "source": "jsonld.datePublished",
+        "quality": "confirmed"
+      },
+      "modifiedAt": {
+        "value": "2026-09-14T11:05:00+05:00",
+        "source": "jsonld.dateModified",
+        "quality": "plausible"
+      }
+    },
+    "blocks": [
+      {
+        "type": "title",
+        "text": "В Заречье открылась новая библиотека"
+      },
+      {
+        "type": "subtitle",
+        "text": "Здание на 1200 квадратных метров построили за два года на месте бывшего кинотеатра"
+      },
+      {
+        "type": "paragraph",
+        "text": "В микрорайоне Заречье в субботу открылась новая районная библиотека. Об этом сообщила пресс-служба городской администрации."
+      },
+      {
+        "type": "paragraph",
+        "text": "Фонд библиотеки насчитывает около 40 тысяч книг, из них детская литература занимает треть."
+      },
+      {
+        "type": "heading",
+        "text": "Что есть внутри"
+      },
+      {
+        "type": "paragraph",
+        "text": "Кроме читальных залов, в здании работают коворкинг и лекторий на 80 мест."
+      },
+      {
+        "type": "list_item",
+        "text": "читальный зал на втором этаже;"
+      },
+      {
+        "type": "list_item",
+        "text": "детская комната с игровой зоной."
+      },
+      {
+        "type": "quote",
+        "text": "Мы хотели сделать место, куда захочется приходить каждый день, — сказала директор библиотеки Елена Орлова."
+      },
+      {
+        "type": "caption",
+        "text": "Фото: пресс-служба администрации"
+      },
+      {
+        "type": "paragraph",
+        "text": "Библиотека открыта ежедневно, кроме понедельника, с 10:00 до 20:00. Вход свободный."
+      }
+    ],
+    "warnings": []
+  }
+}
