@@ -123,7 +123,7 @@ describe("защита локального API", () => {
   test("health не раскрывает ключ", async () => {
     const { call } = await setup();
     const { body } = await call("GET", "/api/health");
-    expect(body).toEqual({ ok: true, provider: "gemini", model: "gemini-3.8-flash", problem: null });
+    expect(body).toEqual({ ok: true, provider: "gemini", model: "gemini-3.8-flash", search: "Google Search", problem: null });
   });
 });
 

@@ -19,7 +19,6 @@ h3 { font-size: 13px; margin: 16px 0 6px; text-transform: uppercase; letter-spac
 p { margin: 8px 0; }
 .muted, .meta-label { color: var(--muted); }
 .meta-row { display: flex; flex-wrap: wrap; gap: 4px; }
-.privacy { color: var(--muted); font-size: 12px; line-height: 1.45; }
 .warning { background: var(--warn-bg); padding: 8px 10px; border-radius: 6px; }
 .error { color: var(--danger); }
 .busy { color: var(--muted); }
@@ -96,12 +95,15 @@ main.is-idle { display: flex; flex-direction: column; }
 button.cta { width: 100%; max-width: 240px; padding: 11px 20px; font-size: 15px; font-weight: 600; border-radius: 999px; transition: filter .12s ease, transform .12s ease; }
 button.cta:hover:not(:disabled) { filter: brightness(1.08); }
 button.cta:active:not(:disabled) { transform: translateY(1px); }
-.start .privacy { max-width: 240px; margin: 0; }
+.engine { display: grid; grid-template-columns: auto auto; gap: 2px 6px; margin: 0; font-size: 12px; color: var(--muted); }
+.engine dt { text-align: right; }
+.engine dd { margin: 0; text-align: left; color: var(--fg); }
 
 /* --- Кнопки-глифы в строке статуса --- */
 .head-actions { display: flex; gap: 2px; margin-left: auto; }
 .icon-btn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); }
 .icon-btn svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn svg .solid { fill: currentColor; stroke: none; }
 .icon-btn:hover:not(:disabled) { background: var(--track); color: var(--fg); }
 .icon-btn.danger { color: var(--muted); }
 .icon-btn.danger:hover:not(:disabled), .icon-btn.is-armed { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }

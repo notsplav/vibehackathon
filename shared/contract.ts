@@ -175,9 +175,11 @@ export interface CreateAnalysisResponse {
 
 export interface HealthResponse {
   ok: boolean;
-  /** Кто проверяет утверждения: Gemini с Google Search или локальная Ollama с Ollama Web Search. */
+  /** Кто проверяет утверждения: Gemini с Google Search или локальная Ollama с поиском. */
   provider: "gemini" | "ollama";
   model: string;
+  /** Чем ищутся источники, для показа пользователю: «Google Search», «SearXNG», «Ollama Web Search». */
+  search: string;
   /** Почему проверка сейчас невозможна (нет ключа, Ollama не запущена, модель не скачана); null — всё готово. */
   problem: string | null;
 }
