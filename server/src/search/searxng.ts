@@ -55,12 +55,21 @@ export class SearxngSearch implements SearchProvider {
     return withRetry(() => this.request(query, signal), this.retry, null, signal);
   }
 
+  /**
+   * Лёгкая проверка без настоящего поиска: /search?format=json без запроса отвечает 400 «No query»,
+   * если JSON разрешён, и 403 — если нет. Поисковики при этом не вызываются.
+   */
   async problem(): Promise<string | null> {
+    const url = new URL("/search", this.baseUrl);
+    url.searchParams.set("format", "json");
+    let res: Response;
     try {
-      await this.request("проверка", AbortSignal.timeout(5000));
-      return null;
-    } catch (e) {
-      return e instanceof ModelError && e.userText ? e.userText : `SearXNG недоступен на ${this.baseUrl}.`;
+      res = await this.fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(3000) });
+    } catch {
+      return `SearXNG недоступен на ${this.baseUrl}: запустите его командой npm run searxng:up.`;
     }
+    if (res.status === 403) return "SearXNG отклоняет JSON-запросы: проверьте searxng/settings.yml (search.formats: json) и перезапустите.";
+    if (res.status === 400 || res.ok) return null;
+    return `SearXNG отвечает с ошибкой HTTP ${res.status}.`;
   }
 }
