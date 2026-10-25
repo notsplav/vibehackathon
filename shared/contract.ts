@@ -96,10 +96,19 @@ export interface Evidence {
   grounding: { interactionId: string | null; annotationIndex: number };
 }
 
+export interface ClaimOccurrence {
+  blockId: string;
+  /** Точный фрагмент текста этого блока (после нормализации пробелов). */
+  exactText: string;
+}
+
 export interface Claim {
   id: string;
   blockIds: string[];
+  /** Фрагмент первого вхождения; совпадает с `occurrences[0].exactText`. */
   exactText: string;
+  /** Все вхождения утверждения: дубликаты из заголовка, подзаголовка и абзацев объединены в один claim. */
+  occurrences: ClaimOccurrence[];
   normalizedClaim: string;
   kind: ClaimKind;
   status: ClaimStatus;
@@ -118,7 +127,9 @@ export type AnalysisStatus = "queued" | "extracting_claims" | "checking" | "comp
 export interface AnalysisStats {
   /** Уникальные проверяемые утверждения (без мнений). */
   total: number;
+  /** Обработка завершена: получен вердикт (`checked`) или объяснённая ошибка (`failed`). */
   completed: number;
+  /** Ещё в очереди, проверяется или не проверено из-за отмены. */
   notCompleted: number;
   byVerdict: Record<Verdict, number>;
   failed: number;

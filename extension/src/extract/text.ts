@@ -1,21 +1,10 @@
 // Работа с текстом и видимостью элементов. Не изменяет DOM.
 
+import { normalizeSpace } from "../../../shared/text.ts";
+
+export { normalizeForMatch, normalizeSpace, wordSimilarity } from "../../../shared/text.ts";
+
 const SKIP_TEXT_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "SVG", "IFRAME", "OBJECT", "CANVAS"]);
-
-/** Схлопывает пробельные символы (включая неразрывный пробел) в один пробел. */
-export function normalizeSpace(text: string): string {
-  return text.replace(/[\s ​⁠﻿]+/g, " ").trim();
-}
-
-/** Нормализация для сравнения строк: регистр, «ё», кавычки, тире и концевая пунктуация. */
-export function normalizeForMatch(text: string): string {
-  return normalizeSpace(text)
-    .toLowerCase()
-    .replace(/ё/g, "е")
-    .replace(/[«»„“”"‘’'`]/g, "")
-    .replace(/[‐‑‒–—―]/g, "-")
-    .replace(/[\s.,:;!?…]+$/u, "");
-}
 
 /** Видимый текст элемента без скриптов и скрытых потомков; пробелы нормализованы. */
 export function visibleText(el: Element): string {
@@ -78,14 +67,4 @@ export function linkDensity(el: Element): number {
   let linked = 0;
   for (const a of Array.from(el.querySelectorAll("a"))) linked += visibleText(a).length;
   return Math.min(1, linked / total);
-}
-
-/** Сходство двух строк по множеству слов (коэффициент Жаккара). */
-export function wordSimilarity(a: string, b: string): number {
-  const wa = new Set(normalizeForMatch(a).split(/[^\p{L}\p{N}]+/u).filter(Boolean));
-  const wb = new Set(normalizeForMatch(b).split(/[^\p{L}\p{N}]+/u).filter(Boolean));
-  if (wa.size === 0 || wb.size === 0) return 0;
-  let common = 0;
-  for (const w of wa) if (wb.has(w)) common++;
-  return common / (wa.size + wb.size - common);
 }
