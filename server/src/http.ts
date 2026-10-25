@@ -19,6 +19,11 @@ export interface AppDeps {
   problem: () => Promise<string | null>;
 }
 
+export function searchName(config: Config): string {
+  if (config.provider === "gemini") return "Google Search";
+  return config.searchProvider === "searxng" ? "SearXNG" : "Ollama Web Search";
+}
+
 /** Провайдер и модель анализа: часть ключа кэша. */
 export function engineOf(config: Config): string {
   return `${config.provider}:${config.model}`;
@@ -100,7 +105,7 @@ export function createApp({ config, store, runner, problem }: AppDeps): Server {
     if (parts[0] !== "api") throw new HttpError(404, "Не найдено");
 
     if (parts[1] === "health" && parts.length === 2 && req.method === "GET") {
-      const body: HealthResponse = { ok: true, provider: config.provider, model: config.model, problem: await problem() };
+      const body: HealthResponse = { ok: true, provider: config.provider, model: config.model, search: searchName(config), problem: await problem() };
       return send(res, 200, body);
     }
 
