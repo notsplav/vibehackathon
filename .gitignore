@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 CLAUDE.local.md
+# Приватный ключ и пакет «Упаковать расширение» в Chrome
+*.pem
+*.crx
 
 # Локальные копии чужих статей
 fixtures/local/
