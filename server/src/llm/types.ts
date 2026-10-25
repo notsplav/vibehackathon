@@ -1,6 +1,6 @@
 // Что конвейер требует от модели. Реализации: GeminiFactChecker и OllamaFactChecker; в тестах — заглушка.
 
-import type { AnalysisStats, Block, CheckStep, ClaimKind, Verdict } from "../../../shared/contract.ts";
+import type { AnalysisStats, ArticleFocus, Block, CheckStep, ClaimKind, Verdict } from "../../../shared/contract.ts";
 import type { RawClaim } from "../pipeline/claims.ts";
 import type { Citation, SourceAssessment } from "../pipeline/evidence.ts";
 
@@ -41,7 +41,8 @@ export interface SummaryInput {
 export type StepCallback = (step: CheckStep, queries?: string[]) => void;
 
 export interface FactChecker {
-  extractClaims(article: ArticleContext, blocks: Block[], signal?: AbortSignal): Promise<RawClaim[]>;
+  /** `focus` — проверка выделенного фрагмента: утверждения только из него, остальные блоки — контекст. */
+  extractClaims(article: ArticleContext, blocks: Block[], signal?: AbortSignal, focus?: ArticleFocus | null): Promise<RawClaim[]>;
   checkClaim(input: CheckInput, signal?: AbortSignal, onStep?: StepCallback): Promise<CheckOutcome>;
   summarize(input: SummaryInput, signal?: AbortSignal): Promise<string | null>;
 }

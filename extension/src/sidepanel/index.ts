@@ -3,7 +3,15 @@
 
 import type { AnalysisState, ArticleMetadata, Claim, ExtractedArticle, HealthResponse, SourcedValue } from "../../../shared/contract.ts";
 import { LABELS, displayState } from "../labels.ts";
-import { type ExtractReply, type PanelMessage, type RenderReply, SETTINGS_CHANGED } from "../messages.ts";
+import {
+  CHECK_SELECTION,
+  type ExtractReply,
+  type PanelMessage,
+  PENDING_SELECTION_KEY,
+  type PendingSelection,
+  type RenderReply,
+  SETTINGS_CHANGED,
+} from "../messages.ts";
 import { ApiError, api } from "./api.ts";
 import { type IconName, icon } from "./icons.ts";
 import { liveStep, renderProgress, tick } from "./progress.ts";
@@ -57,9 +65,17 @@ async function inject(): Promise<void> {
   }
 }
 
-async function extract(): Promise<{ article: ExtractedArticle; fingerprint: string }> {
+/** Что проверять: всю статью или выделенный фрагмент (hint — его текст, если выделение снято). */
+interface Scope {
+  selection?: { hint: string | null; onlyHint?: boolean };
+}
+
+async function extract(scope: Scope = {}): Promise<{ article: ExtractedArticle; fingerprint: string }> {
   await inject();
-  const reply = await sendToTab<ExtractReply>({ type: "vh:extract" });
+  const msg: PanelMessage = scope.selection
+    ? { type: "vh:extract-selection", hint: scope.selection.hint, onlyHint: scope.selection.onlyHint }
+    : { type: "vh:extract" };
+  const reply = await sendToTab<ExtractReply>(msg);
   if (!reply?.ok) throw new Error(reply?.error ?? "Не удалось извлечь статью");
   return reply;
 }
@@ -112,13 +128,13 @@ async function init(): Promise<void> {
   if (view.analysis && !isDone(view.analysis)) schedulePoll(gen);
 }
 
-async function analyze(force: boolean): Promise<void> {
+async function analyze(force: boolean, scope: Scope = {}): Promise<void> {
   const gen = ++generation;
   stopPolling();
-  Object.assign(view, { error: null, notice: null, stale: false, busy: "Извлекаем статью…" });
+  Object.assign(view, { error: null, notice: null, stale: false, busy: scope.selection ? "Готовим выделенный фрагмент…" : "Извлекаем статью…" });
   render();
   try {
-    const { article, fingerprint } = await extract();
+    const { article, fingerprint } = await extract(scope);
     view.metadata = article.metadata;
     if (article.extraction.status !== "ok") {
       view.busy = null;
@@ -126,7 +142,9 @@ async function analyze(force: boolean): Promise<void> {
       render();
       return;
     }
-    view.busy = `Статья извлечена: блоков ${article.blocks.length}. Отправляем на проверку…`;
+    view.busy = article.focus
+      ? `Фрагмент и контекст: блоков ${article.blocks.length}. Отправляем на проверку…`
+      : `Статья извлечена: блоков ${article.blocks.length}. Отправляем на проверку…`;
     render();
     const created = await api.create(article, force);
     view.saved = { analysisId: created.analysisId, fingerprint };
@@ -304,8 +322,25 @@ function startScreen(): HTMLElement {
     "section",
     { cls: "start" },
     button("Начать проверку", () => void analyze(false), "primary cta"),
+    button("Проверить выделенное", () => void analyze(false, { selection: { hint: null } }), "secondary"),
+    h("p", { cls: "start-tip", text: "Или выделите текст и нажмите правой кнопкой → «Сверка: проверить выделенное»." }),
     engineInfo(view.health),
   );
+}
+
+/** Какой фрагмент проверяется — над ходом проверки. */
+function focusBox(text: string): HTMLElement {
+  const short = text.length > 240 ? `${text.slice(0, 240)}…` : text;
+  return h("section", { cls: "focus" }, h("div", { cls: "focus-label", text: "Проверяется выделенный фрагмент" }), h("p", { cls: "focus-text", text: `«${short}»` }));
+}
+
+/** Проверка из контекстного меню: фоновый скрипт оставляет запрос, панель забирает его один раз. */
+async function consumePendingSelection(): Promise<void> {
+  const stored = (await chrome.storage.session.get(PENDING_SELECTION_KEY)) as Record<string, PendingSelection | undefined>;
+  const pending = stored[PENDING_SELECTION_KEY];
+  if (!pending || pending.tabId !== view.tabId || Date.now() - pending.at > 60_000) return;
+  await chrome.storage.session.remove(PENDING_SELECTION_KEY);
+  await analyze(false, { selection: { hint: pending.text || null } });
 }
 
 /** Удаление подтверждается вторым нажатием в течение нескольких секунд. */
@@ -326,7 +361,8 @@ function iconButton(name: IconName, label: string, onClick: () => void, cls = ""
 function actionButtons(a: AnalysisState): HTMLElement {
   const bar = h("div", { cls: "head-actions" });
   if (!TERMINAL.has(a.status)) bar.append(iconButton("stop", "Остановить проверку", () => void cancel()));
-  bar.append(iconButton("retry", "Проверить заново", () => void analyze(true)));
+  // Повтор проверяет тот же объём: всю статью или тот же выделенный фрагмент.
+  bar.append(iconButton("retry", "Проверить заново", () => void analyze(true, a.focus ? { selection: { hint: a.focus.text, onlyHint: true } } : {})));
   const armed = Date.now() < deleteArmedUntil;
   bar.append(
     iconButton(
@@ -363,6 +399,7 @@ function render(): void {
   if (idle) children.push(startScreen());
 
   if (a) {
+    if (a.focus) children.push(focusBox(a.focus.text));
     children.push(renderProgress(a, lastPollAt, actionButtons(a)));
     const facts = a.claims.filter((c) => c.status !== "opinion");
     const opinions = a.claims.filter((c) => c.status === "opinion");
@@ -380,6 +417,7 @@ if (settingsButton) {
 }
 // После сохранения настроек обновляем подпись «Модель / Поиск» и предупреждения.
 chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
+  if (msg?.type === CHECK_SELECTION) void consumePendingSelection();
   if (msg?.type === SETTINGS_CHANGED) {
     api.health().then(
       (health) => ((view.health = health), render()),
@@ -395,4 +433,5 @@ chrome.tabs.onActivated.addListener(() => void init());
 chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (tabId === view.tabId && (info.url || info.status === "complete")) void init();
 });
-void init();
+// Панель могла открыться из контекстного меню — тогда сразу проверяем выделение.
+void init().then(() => consumePendingSelection());

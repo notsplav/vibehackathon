@@ -2,10 +2,10 @@
 // (SearXNG или Ollama Web Search). Источники берутся только из результатов поиска,
 // модель может лишь сослаться на их номера — ссылкам из её текста сервер не доверяет.
 
-import type { Block, Verdict } from "../../../shared/contract.ts";
+import type { ArticleFocus, Block, Verdict } from "../../../shared/contract.ts";
 import { VERDICTS } from "../../../shared/contract.ts";
 import { ModelError } from "../llm/errors.ts";
-import { EXTRACT_WITH_QUERIES_SCHEMA, EXTRACT_WITH_QUERIES_SYSTEM, QUERY_SCHEMA, QUERY_SYSTEM, SUMMARY_SYSTEM, VERDICT_SCHEMA, VERDICT_SYSTEM } from "../llm/prompts.ts";
+import { EXTRACT_WITH_QUERIES_SCHEMA, EXTRACT_WITH_QUERIES_SYSTEM, QUERY_SCHEMA, QUERY_SYSTEM, SUMMARY_SYSTEM, VERDICT_SCHEMA, VERDICT_SYSTEM, extractInput, extractSystem } from "../llm/prompts.ts";
 import { DEFAULT_RETRY, type RetryPolicy, parseJson, withRetry } from "../llm/retry.ts";
 import type { ArticleContext, CheckInput, CheckOutcome, FactChecker, StepCallback, SummaryInput } from "../llm/types.ts";
 import { type RawClaim, cleanQueries } from "../pipeline/claims.ts";
@@ -80,13 +80,9 @@ export class OllamaFactChecker implements FactChecker {
     );
   }
 
-  async extractClaims(article: ArticleContext, blocks: Block[], signal?: AbortSignal): Promise<RawClaim[]> {
-    const input = JSON.stringify({
-      title: article.title,
-      publishedAt: article.publishedAt,
-      blocks: blocks.map((b) => ({ id: b.id, type: b.type, text: b.text })),
-    });
-    const parsed = parseJson(await this.chat(EXTRACT_WITH_QUERIES_SYSTEM, input, EXTRACT_WITH_QUERIES_SCHEMA, signal)) as { claims?: unknown };
+  async extractClaims(article: ArticleContext, blocks: Block[], signal?: AbortSignal, focus?: ArticleFocus | null): Promise<RawClaim[]> {
+    const system = extractSystem(EXTRACT_WITH_QUERIES_SYSTEM, focus);
+    const parsed = parseJson(await this.chat(system, extractInput(article, blocks, focus), EXTRACT_WITH_QUERIES_SCHEMA, signal)) as { claims?: unknown };
     if (!Array.isArray(parsed?.claims)) throw new ModelError("invalid_response", "В ответе нет массива claims");
     return parsed.claims as RawClaim[];
   }

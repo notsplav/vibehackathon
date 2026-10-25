@@ -49,6 +49,13 @@ export const extractedArticleSchema = z.object({
       }),
     )
     .max(MAX_BLOCKS),
+  focus: z
+    .object({
+      blockIds: z.array(z.string().regex(/^b\d{1,5}$/)).min(1).max(50),
+      text: z.string().min(3).max(8000),
+    })
+    .nullable()
+    .optional(),
   extraction: z.object({
     status: z.enum(["ok", "failed"]),
     method: z.string().max(100),

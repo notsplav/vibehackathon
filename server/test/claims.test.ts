@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Block } from "../../shared/contract.ts";
-import { chunkBlocks, mergeDuplicates, validateClaims } from "../src/pipeline/claims.ts";
+import { chunkBlocks, mergeDuplicates, restrictToFocus, validateClaims } from "../src/pipeline/claims.ts";
 
 const blocks: Block[] = [
   { id: "b1", type: "title", order: 1, text: "Путин сделал заявление о беспорядках в ЕС", links: [] },
@@ -132,4 +132,21 @@ test("поисковые запросы из извлечения очищают
   expect(claims[0]!.searchQueries).toEqual(["ЕС обвиняет США беспорядки"]);
   expect(claims[2]!.searchQueries).toEqual([]);
   expect(mergeDuplicates(claims, blocks)[0]!.searchQueries).toEqual(["ЕС обвиняет США беспорядки", "Путин интервью Зарубину ЕС США"]);
+});
+
+describe("проверка выделенного фрагмента", () => {
+  const draft = (blockId: string, exactText: string) => ({ normalizedClaim: exactText, kind: "other" as const, isOpinion: false, occurrences: [{ blockId, exactText }], searchQueries: [] });
+
+  test("остаются утверждения, пересекающиеся с выделением, даже если оно начинается посреди предложения", () => {
+    const focus = { blockIds: ["b3"], text: "удивило, что политики Европейского союза (ЕС) начали обвинять США в организации беспорядков" };
+    const kept = restrictToFocus(
+      [
+        draft("b3", "Президента России Владимира Путина удивило, что политики Европейского союза (ЕС) начали обвинять США в организации беспорядков."),
+        draft("b3", "Об этом он рассказал в интервью журналисту Павлу Зарубину."),
+        draft("b2", "Путина удивило, что политики ЕС начали обвинять США в организации беспорядков"),
+      ],
+      focus,
+    );
+    expect(kept.map((c) => c.occurrences[0]!.blockId + ":" + c.occurrences[0]!.exactText.slice(0, 20))).toEqual(["b3:Президента России Вл"]);
+  });
 });

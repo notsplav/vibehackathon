@@ -59,6 +59,17 @@ export interface ExtractionInfo {
   error?: { code: ExtractionErrorCode; message: string };
 }
 
+/**
+ * Проверка выделенного фрагмента: утверждения берутся только из него, остальные блоки статьи — контекст
+ * (заголовок, подзаголовок и соседние абзацы), чтобы модель раскрыла местоимения, даты и субъекты.
+ */
+export interface ArticleFocus {
+  /** Блоки, которые пересекает выделение. */
+  blockIds: string[];
+  /** Выделенный текст, пробелы нормализованы. */
+  text: string;
+}
+
 export interface ExtractedArticle {
   schemaVersion: typeof SCHEMA_VERSION;
   url: string;
@@ -68,6 +79,8 @@ export interface ExtractedArticle {
   metadata: ArticleMetadata;
   blocks: Block[];
   extraction: ExtractionInfo;
+  /** Задано — проверяется только выделенный фрагмент, остальные блоки служат контекстом. */
+  focus?: ArticleFocus | null;
 }
 
 // --- Утверждения и проверка ---
@@ -151,6 +164,8 @@ export interface LiveProgress {
 export interface AnalysisState {
   analysisId: string;
   status: AnalysisStatus;
+  /** Проверка выделенного фрагмента; null — проверяется вся статья. */
+  focus: ArticleFocus | null;
   /** true, пока не завершены все проверки: интерфейс показывает «предварительный результат». */
   preliminary: boolean;
   url: string;

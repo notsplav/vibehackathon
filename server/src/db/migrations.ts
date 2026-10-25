@@ -102,4 +102,10 @@ export const MIGRATIONS: Migration[] = [
     // Настройки со страницы расширения; поверх значений по умолчанию из .env. Ключи API сюда не пишутся.
     sql: `CREATE TABLE settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at TEXT NOT NULL);`,
   },
+  {
+    version: 6,
+    name: "analysis_focus",
+    // Проверка выделенного фрагмента: какие блоки и какой текст выделены (null — вся статья).
+    sql: `ALTER TABLE analyses ADD COLUMN focus_json TEXT;`,
+  },
 ];

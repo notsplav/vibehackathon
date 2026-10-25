@@ -108,3 +108,11 @@ button.cta:active:not(:disabled) { transform: translateY(1px); }
 .icon-btn.danger { color: var(--muted); }
 .icon-btn.danger:hover:not(:disabled), .icon-btn.is-armed { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 @media (prefers-reduced-motion: reduce) { button.cta { transition: none; } }
+
+/* --- Проверка выделенного --- */
+button.secondary { border: 0; background: none; color: var(--accent); font-weight: 600; padding: 4px 8px; border-radius: 6px; }
+button.secondary:hover:not(:disabled) { background: var(--active-soft); }
+.start-tip { margin: -4px 0 4px; max-width: 240px; font-size: 12px; color: var(--muted); }
+.focus { margin: 12px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--active-soft); border-radius: 0 8px 8px 0; }
+.focus-label { font-size: 12px; font-weight: 600; color: var(--accent); }
+.focus-text { margin: 4px 0 0; font-size: 13px; }
