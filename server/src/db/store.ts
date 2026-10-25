@@ -129,6 +129,7 @@ export class Store {
       stats: computeStats(claims),
       summary: row.summary,
       error: row.error,
+      live: null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

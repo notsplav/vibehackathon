@@ -36,6 +36,10 @@ function ensureStyle(doc: Document): void {
   style.textContent =
     `[${STATUS_ATTR}]{cursor:pointer;padding-left:6px;transition:background-color .2s}` +
     `[${STATUS_ATTR}="checking"],[${STATUS_ATTR}="queued"]{box-shadow:inset 3px 0 0 #8c959f}` +
+    // Блок, который проверяется прямо сейчас, мягко пульсирует (без движения при prefers-reduced-motion).
+    `@keyframes vh-pulse{50%{background-color:color-mix(in srgb, #0969da 14%, transparent)}}` +
+    `[${STATUS_ATTR}="checking"]{animation:vh-pulse 1.6s ease-in-out infinite}` +
+    `@media (prefers-reduced-motion: reduce){[${STATUS_ATTR}="checking"]{animation:none}}` +
     `[${STATUS_ATTR}="failed"]{box-shadow:inset 3px 0 0 #8c959f;outline:1px dashed #8c959f;outline-offset:2px}` +
     `[${STATUS_ATTR}]::after{content:attr(${ICON_ATTR});font:600 0.8em/1 system-ui,sans-serif;margin-left:.35em;vertical-align:super}` +
     rules;

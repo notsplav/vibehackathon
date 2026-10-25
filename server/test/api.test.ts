@@ -5,7 +5,7 @@ import type { AnalysisState, ExtractedArticle } from "../../shared/contract.ts";
 import { loadConfig } from "../src/config.ts";
 import { Store } from "../src/db/store.ts";
 import { ModelError } from "../src/llm/errors.ts";
-import type { CheckInput, CheckOutcome, FactChecker } from "../src/llm/types.ts";
+import type { CheckInput, CheckOutcome, FactChecker, StepCallback } from "../src/llm/types.ts";
 import { createApp } from "../src/http.ts";
 import type { RawClaim } from "../src/pipeline/claims.ts";
 import { AnalysisRunner } from "../src/pipeline/runner.ts";
@@ -46,8 +46,9 @@ class FakeChecker implements FactChecker {
     ];
   }
 
-  async checkClaim(input: CheckInput): Promise<CheckOutcome> {
+  async checkClaim(input: CheckInput, _signal?: AbortSignal, onStep?: StepCallback): Promise<CheckOutcome> {
     this.checkCalls++;
+    onStep?.("search", [`запрос: ${input.claim}`]);
     if (this.gate) await this.gate;
     if (this.failWith) throw this.failWith;
     const cited = input.claim.includes("40 тысяч");
@@ -130,7 +131,7 @@ test("полный проход: дубликаты объединены, мне
   const { call, waitFor } = await setup();
   const created = await call("POST", "/api/analyses", { body: article });
   expect(created.status).toBe(201);
-  const state = await waitFor(created.body.analysisId, (s) => s.status === "completed" && s.summary !== null);
+  const state = await waitFor(created.body.analysisId, (s) => s.status === "completed" && s.summary !== null && s.live === null);
 
   expect(state.claims.map((c) => [c.normalizedClaim, c.blockIds, c.status, c.verdict])).toEqual([
     ["В Заречье открылась библиотека", ["b1", "b2"], "checked", "insufficient"],
@@ -149,6 +150,7 @@ test("полный проход: дубликаты объединены, мне
     opinions: 1,
   });
   expect(state.preliminary).toBe(false);
+  expect(state.live).toBeNull();
 
   // Та же редакция статьи берётся из кэша, force=1 запускает новый анализ.
   const again = await call("POST", "/api/analyses", { body: article });
@@ -167,6 +169,14 @@ test("отмена: готовые результаты сохраняются, 
   const { call, waitFor } = await setup(checker);
   const { body } = await call("POST", "/api/analyses", { body: article });
   await waitFor(body.analysisId, (s) => s.claims.filter((c) => c.status === "checking").length === 2);
+
+  // Живой прогресс: какие утверждения проверяются и на каком шаге.
+  const during = await call("GET", `/api/analyses/${body.analysisId}`);
+  expect(during.body.live.extraction).toEqual({ done: 1, total: 1 });
+  expect(during.body.live.checking.map((c: any) => [c.claimId, c.step, c.queries.length])).toEqual([
+    ["c1", "search", 1],
+    ["c2", "search", 1],
+  ]);
 
   const cancelled = await call("POST", `/api/analyses/${body.analysisId}/cancel`);
   expect(cancelled.body.status).toBe("cancelled");

@@ -2,10 +2,10 @@
 // Прогресс хранится на сервере; панель запоминает только analysisId для URL вкладки и восстанавливается по нему.
 
 import type { AnalysisState, ArticleMetadata, Claim, ExtractedArticle, HealthResponse, SourcedValue } from "../../../shared/contract.ts";
-import { VERDICTS } from "../../../shared/contract.ts";
 import { LABELS, displayState } from "../labels.ts";
 import type { ExtractReply, PanelMessage, RenderReply } from "../messages.ts";
 import { ApiError, api } from "./api.ts";
+import { liveStep, renderProgress, tick } from "./progress.ts";
 
 const POLL_MS = 1500;
 const TERMINAL = new Set(["completed", "cancelled", "failed"]);
@@ -30,6 +30,8 @@ interface View {
 
 const view: View = { tabId: null, url: null, saved: null, analysis: null, metadata: null, busy: null, error: null, notice: null, stale: false, health: null };
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
+/** Время последнего успешного опроса сервера — показывается как «обновлено N с назад». */
+let lastPollAt: number | null = null;
 let generation = 0;
 
 const root = document.getElementById("app")!;
@@ -86,6 +88,7 @@ async function init(): Promise<void> {
   view.saved = saved;
   try {
     view.analysis = await api.get(saved.analysisId);
+    lastPollAt = Date.now();
     view.metadata = view.analysis.metadata;
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
@@ -128,6 +131,7 @@ async function analyze(force: boolean): Promise<void> {
     view.saved = { analysisId: created.analysisId, fingerprint };
     await chrome.storage.local.set({ [storageKey(view.url ?? article.url)]: view.saved });
     view.analysis = await api.get(created.analysisId);
+    lastPollAt = Date.now();
     view.busy = null;
     await pushToPage();
     render();
@@ -193,7 +197,9 @@ function schedulePoll(gen: number): void {
     if (gen !== generation || !view.saved) return;
     try {
       const next = await api.get(view.saved.analysisId);
-      const changed = next.updatedAt !== view.analysis?.updatedAt;
+      lastPollAt = Date.now();
+      // Живой прогресс меняется без updatedAt (шаги проверки хранятся только в памяти сервера).
+      const changed = next.updatedAt !== view.analysis?.updatedAt || JSON.stringify(next.live) !== JSON.stringify(view.analysis?.live);
       view.analysis = next;
       view.error = null;
       if (changed) {
@@ -265,41 +271,14 @@ function metadataSection(m: ArticleMetadata): HTMLElement {
   );
 }
 
-function progressSection(a: AnalysisState): HTMLElement {
-  const s = a.stats;
-  const lines: string[] = [];
-  if (a.status === "queued" || a.status === "extracting_claims") lines.push("Статья извлечена. Ищем проверяемые утверждения…");
-  else lines.push(`Найдено утверждений: ${s.total}${s.opinions ? ` (и мнений: ${s.opinions})` : ""}. Проверено ${s.completed} из ${s.total}.`);
-  if (a.status === "cancelled") lines.push(`Проверка отменена. Не проверено: ${s.notChecked}.`);
-  const section = h("section", { cls: "progress" });
-  if (a.preliminary || a.status === "cancelled") section.append(h("div", { cls: "badge-preliminary", text: "Предварительный результат" }));
-  for (const l of lines) section.append(h("p", { text: l }));
-  if (s.total > 0) {
-    const bar = h("div", { cls: "bar" });
-    const fill = h("div", { cls: "bar-fill" });
-    fill.style.width = `${Math.round((s.completed / s.total) * 100)}%`;
-    bar.setAttribute("role", "progressbar");
-    bar.setAttribute("aria-valuenow", String(s.completed));
-    bar.setAttribute("aria-valuemax", String(s.total));
-    bar.append(fill);
-    section.append(bar);
-    const dist = h("ul", { cls: "dist" });
-    for (const v of VERDICTS) dist.append(h("li", { cls: `s-${v}`, text: `${LABELS[v].icon} ${LABELS[v].text}: ${s.byVerdict[v]}` }));
-    if (s.failed) dist.append(h("li", { cls: "s-failed", text: `${LABELS.failed.icon} ${LABELS.failed.text}: ${s.failed}` }));
-    if (s.notChecked) dist.append(h("li", { cls: "s-not_checked", text: `${LABELS.not_checked.icon} ${LABELS.not_checked.text}: ${s.notChecked}` }));
-    section.append(dist);
-  }
-  if (a.error) section.append(h("p", { cls: "error", text: a.error }));
-  if (a.summary) section.append(h("div", { cls: "summary" }, h("h3", { text: "Сводка" }), h("p", { text: a.summary })));
-  return section;
-}
-
-function claimItem(c: Claim): HTMLElement {
+function claimItem(c: Claim, a: AnalysisState): HTMLElement {
   const state = displayState(c);
+  const step = liveStep(a, c);
   const item = h(
     "li",
-    { cls: "claim" },
+    { cls: `claim${step ? " is-active" : ""}` },
     h("span", { cls: `badge s-${state}`, text: `${LABELS[state].icon ? `${LABELS[state].icon} ` : ""}${LABELS[state].text}` }),
+    step ? h("span", { cls: "claim-step", text: ` · ${step}` }) : null,
     h("div", { text: c.normalizedClaim }),
     c.status === "failed" && c.error ? h("div", { cls: "muted", text: c.error }) : null,
   );
@@ -336,18 +315,21 @@ function render(): void {
   if (view.error) children.push(h("p", { cls: "error", text: view.error }));
 
   if (a) {
-    children.push(progressSection(a));
+    children.push(renderProgress(a, lastPollAt));
     const actions = h("div", { cls: "actions" });
     if (!TERMINAL.has(a.status)) actions.append(button("Отменить", () => void cancel()));
     actions.append(button("Повторить анализ", () => void analyze(true)), button("Удалить результат", () => void removeResult(), "danger"));
     children.push(actions);
     const facts = a.claims.filter((c) => c.status !== "opinion");
     const opinions = a.claims.filter((c) => c.status === "opinion");
-    if (facts.length) children.push(h("h3", { text: "Утверждения" }), h("ul", { cls: "claims" }, ...facts.map(claimItem)));
-    if (opinions.length) children.push(h("h3", { text: "Мнения (не проверяются)" }), h("ul", { cls: "claims" }, ...opinions.map(claimItem)));
+    if (facts.length) children.push(h("h3", { text: "Утверждения" }), h("ul", { cls: "claims" }, ...facts.map((c) => claimItem(c, a))));
+    if (opinions.length) children.push(h("h3", { text: "Мнения (не проверяются)" }), h("ul", { cls: "claims" }, ...opinions.map((c) => claimItem(c, a))));
   }
   root.replaceChildren(...children.filter((c): c is Node => c !== null));
 }
+
+// Таймеры и «обновлено N с назад» меняются каждую секунду без перерисовки всей панели.
+setInterval(() => tick(root), 1000);
 
 chrome.tabs.onActivated.addListener(() => void init());
 chrome.tabs.onUpdated.addListener((tabId, info) => {

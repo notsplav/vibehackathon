@@ -137,6 +137,17 @@ export interface AnalysisStats {
   opinions: number;
 }
 
+/** Что сейчас делается с утверждением: составление запросов, поиск источников, вывод вердикта. */
+export type CheckStep = "queries" | "search" | "verdict";
+
+/** Живой ход анализа. Хранится только в памяти сервера и есть только у идущего анализа. */
+export interface LiveProgress {
+  /** Выделение утверждений: сколько частей статьи обработано из скольких. */
+  extraction: { done: number; total: number } | null;
+  /** Утверждения, которые проверяются прямо сейчас. */
+  checking: { claimId: string; step: CheckStep; since: string; queries: string[] }[];
+}
+
 export interface AnalysisState {
   analysisId: string;
   status: AnalysisStatus;
@@ -149,6 +160,8 @@ export interface AnalysisState {
   stats: AnalysisStats;
   summary: string | null;
   error: string | null;
+  /** null, если анализ не выполняется в этом процессе сервера (завершён или ждёт возобновления). */
+  live: LiveProgress | null;
   createdAt: string;
   updatedAt: string;
 }
