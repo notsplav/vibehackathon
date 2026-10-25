@@ -72,6 +72,7 @@
 - `npm install` — установить зависимости всех пакетов (`extension`, `server`).
 - `npm run dev:server` — локальный сервер на `127.0.0.1:8787` с перезапуском при изменениях; читает `.env` из корня. `npm run start:server` — то же без `--watch`.
 - `npm run probe:gemini` — проверить ключ, модель и реальную форму ответа Interactions API с Google Search (ключ не печатается).
+- `npm run build:extension` — собрать расширение в `extension/dist` (загружать через «Загрузить распакованное расширение»).
 - `npm run typecheck` — проверка типов `shared`, `extension`, `server`.
 - `npm test` — все тесты Vitest (`extension/test` в jsdom, `server/test` в Node).
 - `UPDATE_EXPECTED=1 npm test` — перезаписать `fixtures/expected/` фактическим результатом извлечения (только после намеренного изменения алгоритма, дифф проверять вручную). Подробнее — `fixtures/README.md`.
