@@ -6,13 +6,19 @@ export interface Config {
   geminiApiKey: string | null;
   model: string;
   dbPath: string;
-  /** Разрешённые Origin расширения (`chrome-extension://<id>`). Пусто — любой chrome-extension://. */
+  /** Разрешённые Origin расширения (`chrome-extension://<id>`). */
   allowedOrigins: string[];
   checkConcurrency: number;
   maxBodyBytes: number;
   /** Символов текста статьи на один запрос извлечения утверждений. */
   chunkChars: number;
 }
+
+/**
+ * Origin расширения из репозитория. ID стабилен, потому что в extension/static/manifest.json
+ * задан публичный ключ (`key`); приватный ключ не хранится и для локальной установки не нужен.
+ */
+export const DEFAULT_EXTENSION_ORIGIN = "chrome-extension://gpmhmgppcnmhmkiiaefegfiboaoagiao";
 
 function int(value: string | undefined, fallback: number, min: number, max: number): number {
   const n = value === undefined || value === "" ? fallback : Number(value);
@@ -27,7 +33,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     geminiApiKey: env.GEMINI_API_KEY?.trim() || null,
     model: env.GEMINI_MODEL?.trim() || "gemini-3.8-flash",
     dbPath: env.DB_PATH?.trim() || "data/factcheck.sqlite",
-    allowedOrigins: (env.ALLOWED_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+    allowedOrigins: env.ALLOWED_ORIGINS?.trim()
+      ? env.ALLOWED_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)
+      : [DEFAULT_EXTENSION_ORIGIN],
     checkConcurrency: int(env.CHECK_CONCURRENCY, 2, 1, 8),
     maxBodyBytes: int(env.MAX_BODY_BYTES, 2_000_000, 10_000, 20_000_000),
     chunkChars: int(env.CLAIM_CHUNK_CHARS, 8000, 1000, 100_000),

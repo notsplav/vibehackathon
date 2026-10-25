@@ -78,9 +78,7 @@ function guard(req: IncomingMessage, config: Config): void {
   if (!ALLOWED_HOSTS.has(host)) throw new HttpError(403, "Недопустимый Host");
 
   const origin = req.headers.origin;
-  const originAllowed =
-    typeof origin === "string" &&
-    (config.allowedOrigins.length > 0 ? config.allowedOrigins.includes(origin) : origin.startsWith("chrome-extension://"));
+  const originAllowed = typeof origin === "string" && config.allowedOrigins.includes(origin);
   const mutating = req.method !== "GET" && req.method !== "HEAD";
   // GET без Origin (curl, адресная строка) допустим; с чужим Origin — нет.
   if (origin !== undefined && !originAllowed) throw new HttpError(403, "Недопустимый Origin");
