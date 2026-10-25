@@ -1,0 +1,28 @@
+# Конфигурация локального SearXNG для поиска источников (npm run searxng:up).
+# secret_key не хранится в репозитории: скрипт запуска передаёт случайный SEARXNG_SECRET.
+use_default_settings: true
+
+general:
+  instance_name: "vibehackathon-search"
+
+server:
+  # Внутри контейнера; наружу порт публикуется только на 127.0.0.1.
+  bind_address: "0.0.0.0"
+  port: 8080
+  # Защита от ботов мешает API-запросам локального сервера.
+  limiter: false
+  image_proxy: false
+  public_instance: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "auto"
+  # JSON нужен локальному серверу; без него SearXNG отвечает 403.
+  formats:
+    - html
+    - json
+
+outgoing:
+  request_timeout: 5.0
+  max_request_timeout: 10.0
