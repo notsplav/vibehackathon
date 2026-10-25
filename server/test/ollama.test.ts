@@ -128,6 +128,18 @@ describe("Ollama Web Search как запасной поиск", () => {
   });
 });
 
+test("готовность SearXNG проверяется без настоящего поиска", async () => {
+  const ready = fakeFetch(() => ({ status: 400, json: { error: "No query" } }));
+  expect(await new SearxngSearch({ baseUrl: SEARXNG, retry: fast, perQuery: 5, fetch: ready.f }).problem()).toBeNull();
+  const url = new URL(ready.calls[0]!.url);
+  expect([url.pathname, url.searchParams.get("format"), url.searchParams.has("q")]).toEqual(["/search", "json", false]);
+
+  const noJson = fakeFetch(() => ({ status: 403 }));
+  expect(await new SearxngSearch({ baseUrl: SEARXNG, retry: fast, perQuery: 5, fetch: noJson.f }).problem()).toMatch(/settings\.yml/);
+  const down = fakeFetch(() => ({ throws: new TypeError("fetch failed") }));
+  expect(await new SearxngSearch({ baseUrl: SEARXNG, retry: fast, perQuery: 5, fetch: down.f }).problem()).toMatch(/npm run searxng:up/);
+});
+
 test("health сообщает, что мешает проверке: Ollama, модель или поиск", async () => {
   const okSearch: SearchProvider = { name: "searxng", search: async () => [], problem: async () => null };
   const badSearch: SearchProvider = { ...okSearch, problem: async () => "SearXNG недоступен" };
