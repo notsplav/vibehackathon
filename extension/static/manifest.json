@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Проверка утверждений в статьях",
+  "short_name": "Факт-чек",
+  "version": "0.1.0",
+  "description": "Извлекает утверждения из статьи и проверяет их по источникам через локальный сервер и Gemini.",
+  "minimum_chrome_version": "116",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9MV8vrJ0P6wxjGP+UiVi8pgxAFLBxh3OmLAWyMHMOA2GVrQ4WV/HSAwEBoQ7vq89qnoxXxpX012zyWwRJqbvEsuT506hWt8rrg4eyVsP+9fcez24oR9ejKamBbhue2tsX1JzCXK3E5FNUmoVFkTDoze6EnjC7r8nfNHZq74/8yrs3Ciank1uemv6PvuD6mH7EkMj2mMQxj2SJX0VxiTbNDmuA0teshwTK7wwvLxKR8Id8YaRQ80t8+KHbHi+OPusuNVLzLbcqgFHCjn6vwLI4bLJ0GQhDIGKkXsNpWQkTnb6s1j0FQvoZ2kUm6ekArpwWgBl1rOMavIf3frFa83WFwIDAQAB",
+  "action": { "default_title": "Проверить статью" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["activeTab", "scripting", "sidePanel", "storage"],
+  "host_permissions": ["http://127.0.0.1:8787/*"]
+}

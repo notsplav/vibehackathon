@@ -2,11 +2,16 @@
   "name": "@vibehackathon/extension",
   "private": true,
   "type": "module",
-  "devDependencies": {
-    "@types/jsdom": "30.0.0",
-    "jsdom": "30.1.3"
+  "scripts": {
+    "build": "node build.mjs"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.3.6",
+    "@types/jsdom": "30.0.0",
+    "esbuild": "0.28.2",
+    "jsdom": "30.1.3"
   }
 }

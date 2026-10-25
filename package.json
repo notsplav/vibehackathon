@@ -10,6 +10,7 @@
     "server"
   ],
   "scripts": {
+    "build:extension": "npm run build -w extension",
     "dev:server": "npm run dev -w server",
     "start:server": "npm run start -w server",
     "probe:gemini": "npm run probe:gemini -w server",
