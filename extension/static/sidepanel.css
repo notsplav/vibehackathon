@@ -19,7 +19,7 @@ h3 { font-size: 13px; margin: 16px 0 6px; text-transform: uppercase; letter-spac
 p { margin: 8px 0; }
 .muted, .meta-label { color: var(--muted); }
 .meta-row { display: flex; flex-wrap: wrap; gap: 4px; }
-.privacy { color: var(--muted); font-size: 13px; }
+.privacy { color: var(--muted); font-size: 12px; line-height: 1.45; }
 .warning { background: var(--warn-bg); padding: 8px 10px; border-radius: 6px; }
 .error { color: var(--danger); }
 .busy { color: var(--muted); }
@@ -89,3 +89,19 @@ button:focus-visible, .claim:focus-visible { outline: 2px solid var(--accent); o
 @media (prefers-reduced-motion: reduce) {
   .spinner, .bg-checking, .claim.is-active { animation: none; }
 }
+
+/* --- Стартовый экран --- */
+body { min-height: 100vh; display: flex; flex-direction: column; }
+main { flex: 1; }
+main.is-idle { display: flex; flex-direction: column; }
+.start { margin: auto 0; padding: 24px 8px 40px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; }
+.start-icon { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; font-size: 28px; font-weight: 700;
+  color: var(--accent); background: var(--active-soft); }
+.start-title { font-size: 18px; margin: 6px 0 0; }
+.start-hint { margin: 0; color: var(--muted); max-width: 260px; }
+button.cta { margin-top: 10px; width: 100%; max-width: 280px; padding: 12px 20px; font-size: 15px; font-weight: 600; border-radius: 10px;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent); transition: transform .12s ease, box-shadow .12s ease, filter .12s ease; }
+button.cta:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 45%, transparent); }
+button.cta:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent); }
+.start .privacy { max-width: 280px; margin: 4px 0 0; }
+@media (prefers-reduced-motion: reduce) { button.cta { transition: none; } }

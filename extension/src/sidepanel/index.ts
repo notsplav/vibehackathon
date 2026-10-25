@@ -290,11 +290,23 @@ function claimItem(c: Claim, a: AnalysisState): HTMLElement {
 }
 
 function privacyText(health: HealthResponse | null): string {
-  const where =
-    health?.provider === "ollama"
-      ? `в локальную модель Ollama (${health.model}); в интернет уходят только поисковые запросы — в Ollama Web Search`
-      : "далее в Gemini API для поиска источников";
-  return `Текст статьи (заголовок, автор, дата и абзацы) будет отправлен на локальный сервер 127.0.0.1 и ${where}. Ничего не отправляется без нажатия кнопки.`;
+  if (health?.provider === "ollama") {
+    return `Текст статьи обработает локальная модель ${health.model}. В интернет уходят только поисковые запросы. Без нажатия кнопки ничего не отправляется.`;
+  }
+  return "Текст статьи уйдёт через локальный сервер в Gemini API для поиска источников. Без нажатия кнопки ничего не отправляется.";
+}
+
+/** Стартовый экран: крупная кнопка по центру панели и короткое пояснение под ней. */
+function startScreen(): HTMLElement {
+  const start = h(
+    "section",
+    { cls: "start" },
+    h("div", { cls: "start-icon", text: "✓" }),
+    h("h2", { cls: "start-title", text: "Проверить статью" }),
+    h("p", { cls: "start-hint", text: "Найдём проверяемые утверждения и сверим их с источниками." }),
+  );
+  start.append(button("Проанализировать статью", () => void analyze(false), "primary cta"), h("p", { cls: "privacy", text: privacyText(view.health) }));
+  return start;
 }
 
 function render(): void {
@@ -303,16 +315,13 @@ function render(): void {
   if (view.health?.problem) children.push(h("p", { cls: "warning", text: view.health.problem }));
   if (view.metadata) children.push(metadataSection(view.metadata));
 
-  if (!a && !view.busy) {
-    children.push(
-      h("p", { cls: "privacy", text: privacyText(view.health) }),
-      button("Проанализировать статью", () => void analyze(false), "primary"),
-    );
-  }
+  const idle = !a && !view.busy;
+  root.classList.toggle("is-idle", idle);
   if (view.busy) children.push(h("p", { cls: "busy", text: view.busy }));
   if (view.stale) children.push(h("p", { cls: "warning", text: "Текст страницы изменился после анализа. Результат не привязан к новому тексту — повторите анализ." }));
   if (view.notice) children.push(h("p", { cls: "muted", text: view.notice }));
   if (view.error) children.push(h("p", { cls: "error", text: view.error }));
+  if (idle) children.push(startScreen());
 
   if (a) {
     children.push(renderProgress(a, lastPollAt));
