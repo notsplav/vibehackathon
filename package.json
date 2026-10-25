@@ -10,6 +10,9 @@
     "server"
   ],
   "scripts": {
+    "dev:server": "npm run dev -w server",
+    "start:server": "npm run start -w server",
+    "probe:gemini": "npm run probe:gemini -w server",
     "typecheck": "tsc -p shared && tsc -p extension && tsc -p server",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
