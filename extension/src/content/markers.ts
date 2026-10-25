@@ -76,11 +76,32 @@ export function applyMarkers(elements: Map<string, Element>, claims: Claim[]): n
       continue;
     }
     el.setAttribute(STATUS_ATTR, state);
-    const checkable = list.filter((c) => c.status !== "opinion").length;
-    el.setAttribute(ICON_ATTR, `${LABELS[state].icon}${checkable > 1 ? ` ${checkable}` : ""}`);
+    el.setAttribute(ICON_ATTR, iconSummary(list));
     marked++;
   }
   return marked;
+}
+
+/** Порядок значков в маркере: от проблемных к подтверждённым. */
+const ICON_ORDER: DisplayState[] = ["contradicted", "disputed", "qualified", "insufficient", "failed", "checking", "supported", "not_checked"];
+
+/**
+ * Значки маркера по каждому статусу: «✗1 ✓2» — одно утверждение противоречит, два подтверждаются.
+ * Если утверждение одно, число не пишется. Мнения не учитываются.
+ */
+export function iconSummary(claims: Claim[]): string {
+  const counts = new Map<DisplayState, number>();
+  for (const c of claims) {
+    if (c.status === "opinion") continue;
+    const s = displayState(c);
+    // «В очереди» и «проверяется» для читателя одно и то же: результата ещё нет.
+    const key = s === "queued" ? "checking" : s;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
+  return ICON_ORDER.filter((s) => counts.has(s))
+    .map((s) => `${LABELS[s].icon}${total > 1 ? counts.get(s) : ""}`)
+    .join(" ");
 }
 
 export function clearMarkers(doc: Document): void {

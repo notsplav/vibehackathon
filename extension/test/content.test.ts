@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { Claim } from "../../shared/contract.ts";
 import { groupClaims } from "../src/content/card.ts";
+import { iconSummary } from "../src/content/markers.ts";
 import { handleClick, handleMessage } from "../src/content/index.ts";
 import { ROOT } from "./fixtures.ts";
 import { loadDocument } from "./load.ts";
@@ -122,4 +123,13 @@ describe("группировка утверждений в карточке", ()
     const unclear = claim("c6", "b3", "c", { verdict: "insufficient" });
     expect(groupClaims("b3", [ok, unclear, bad], blocks).own.map((c) => c.id)).toEqual(["c5", "c6", "c4"]);
   });
+});
+
+test("маркер считает утверждения по каждому вердикту: ✗1 ✓2", () => {
+  const ok = (id: string) => claim(id, "b1", id);
+  const bad = claim("c9", "b1", "x", { verdict: "contradicted" });
+  expect(iconSummary([ok("c1"), bad, ok("c2")])).toBe("✗1 ✓2");
+  expect(iconSummary([bad])).toBe("✗");
+  expect(iconSummary([bad, claim("o", "b1", "y", { status: "opinion", verdict: null })])).toBe("✗");
+  expect(iconSummary([claim("q", "b1", "q", { status: "queued", verdict: null }), claim("w", "b1", "w", { status: "checking", verdict: null }), ok("c3")])).toBe("…2 ✓1");
 });
