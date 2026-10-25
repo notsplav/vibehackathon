@@ -6,6 +6,8 @@ import { foldChars, normalizeForMatch, normalizeSpace, wordSimilarity } from "..
 
 const KINDS: ClaimKind[] = ["event", "date", "number", "quote", "attribution", "other"];
 const DUPLICATE_SIMILARITY = 0.85;
+/** Общий фрагмент — повод объединить только похожие по смыслу формулировки, а не любые две. */
+const SHARED_FRAGMENT_SIMILARITY = 0.6;
 
 /** Блоки, из которых выделяются утверждения. Подписи к фото по умолчанию не проверяются (ТЗ 5.3). */
 export function checkableBlocks(blocks: Block[]): Block[] {
@@ -112,10 +114,26 @@ export function validateClaims(raw: RawClaim[], blocks: Block[]): ValidationRepo
       normalizedClaim,
       kind: KINDS.includes(r.kind as ClaimKind) ? (r.kind as ClaimKind) : "other",
       isOpinion: r.isOpinion === true,
-      occurrences: uniqueOccurrences(occurrences),
+      occurrences: relevantOccurrences(normalizedClaim, uniqueOccurrences(occurrences), report),
     });
   }
   return report;
+}
+
+/** Числа и даты из текста: «20 декабря 1984» → ["20", "1984"]. */
+function numbers(text: string): string[] {
+  return text.match(/\d+(?:[.,]\d+)?/g) ?? [];
+}
+
+/**
+ * Модель иногда привязывает к утверждению фрагмент о другом факте (например, дату рождения к «был актёром»).
+ * Фрагмент с числами, которых нет в утверждении, отбрасывается; первое вхождение остаётся, если других нет.
+ */
+function relevantOccurrences(claim: string, list: ClaimOccurrence[], report: ValidationReport): ClaimOccurrence[] {
+  const claimNumbers = new Set(numbers(claim));
+  const kept = list.filter((o) => numbers(o.exactText).every((n) => claimNumbers.has(n)));
+  report.droppedOccurrences += list.length - Math.max(kept.length, 1);
+  return kept.length > 0 ? kept : list.slice(0, 1);
 }
 
 function uniqueOccurrences(list: ClaimOccurrence[]): ClaimOccurrence[] {
@@ -140,7 +158,8 @@ export function mergeDuplicates(claims: DraftClaim[], blocks: Block[]): DraftCla
       (m) =>
         normalizeForMatch(m.normalizedClaim) === key ||
         wordSimilarity(m.normalizedClaim, c.normalizedClaim) >= DUPLICATE_SIMILARITY ||
-        m.occurrences.some((o) => c.occurrences.some((p) => p.blockId === o.blockId && p.exactText === o.exactText)),
+        (wordSimilarity(m.normalizedClaim, c.normalizedClaim) >= SHARED_FRAGMENT_SIMILARITY &&
+          m.occurrences.some((o) => c.occurrences.some((p) => p.blockId === o.blockId && p.exactText === o.exactText))),
     );
     if (same) {
       same.occurrences = uniqueOccurrences([...same.occurrences, ...c.occurrences]);
