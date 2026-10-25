@@ -112,3 +112,26 @@ export const QUERY_SCHEMA = {
   properties: { queries: { type: "array", items: { type: "string" } } },
   required: ["queries"],
 };
+
+/**
+ * Для провайдера Ollama поисковые запросы составляются сразу при извлечении утверждений:
+ * это экономит один вызов локальной модели на каждое утверждение.
+ */
+export const EXTRACT_WITH_QUERIES_SYSTEM = `${EXTRACT_SYSTEM}
+9. Для каждого утверждения, кроме мнений, добавь searchQueries — 1–2 коротких поисковых запроса на языке утверждения
+   с именами, датами, числами и местами. Для цитат и заявлений один запрос должен искать первоисточник
+   (стенограмму, официальную публикацию, интервью). Для мнений searchQueries — пустой массив.`;
+
+export const EXTRACT_WITH_QUERIES_SCHEMA = {
+  ...EXTRACT_SCHEMA,
+  properties: {
+    claims: {
+      ...EXTRACT_SCHEMA.properties.claims,
+      items: {
+        ...EXTRACT_SCHEMA.properties.claims.items,
+        properties: { ...EXTRACT_SCHEMA.properties.claims.items.properties, searchQueries: { type: "array", items: { type: "string" } } },
+        required: [...EXTRACT_SCHEMA.properties.claims.items.required, "searchQueries"],
+      },
+    },
+  },
+};

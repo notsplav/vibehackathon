@@ -168,6 +168,7 @@ export class AnalysisRunner {
           occurrences: c.occurrences,
           kind: c.kind,
           status: c.isOpinion ? "opinion" : state.cancelled ? "not_checked" : "queued",
+          searchQueries: c.searchQueries,
         })),
       );
       const opinions = merged.filter((c) => c.isOpinion).length;
@@ -180,6 +181,7 @@ export class AnalysisRunner {
     const queue = this.store.claimIdsWithStatus(id, "queued");
     const blockText = new Map(blocks.map((b) => [b.id, b.text]));
     const claims = new Map(this.store.getClaims(id).map((c) => [c.id, c]));
+    const plannedQueries = this.store.searchQueries(id);
     const engine = this.store.engineOf(id) ?? "";
     const reuseSince = !row.fresh && this.options.reuseHours > 0 ? new Date(Date.now() - this.options.reuseHours * 3_600_000).toISOString() : null;
     let lastRetryable: { kind: ModelErrorKind; count: number } | null = null;
@@ -216,6 +218,7 @@ export class AnalysisRunner {
               kind: claim.kind,
               context: [...new Set(claim.occurrences.map((o) => blockText.get(o.blockId) ?? o.exactText))],
               article,
+              searchQueries: plannedQueries.get(claimId) ?? [],
             },
             signal,
             (step, queries) => {

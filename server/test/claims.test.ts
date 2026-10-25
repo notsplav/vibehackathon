@@ -119,3 +119,17 @@ describe("разные факты не склеиваются", () => {
     expect(mergeDuplicates(claims, actor)).toHaveLength(2);
   });
 });
+
+test("поисковые запросы из извлечения очищаются, у мнений отбрасываются, при объединении дубликатов складываются", () => {
+  const { claims } = validateClaims(
+    [
+      { occurrences: [{ blockId: "b2", exactText: "политики ЕС начали обвинять США" }], normalizedClaim: "Политики ЕС начали обвинять США в беспорядках", kind: "event", isOpinion: false, searchQueries: ["  ЕС обвиняет США беспорядки ", "", 42, "ЕС обвиняет США беспорядки"] },
+      { occurrences: [{ blockId: "b3", exactText: "политики Европейского союза (ЕС) начали обвинять США" }], normalizedClaim: "Политики ЕС начали обвинять США в беспорядках.", kind: "event", isOpinion: false, searchQueries: ["Путин интервью Зарубину ЕС США"] },
+      { occurrences: [{ blockId: "b3", exactText: "Об этом он рассказал" }], normalizedClaim: "Это плохо", kind: "other", isOpinion: true, searchQueries: ["не нужен"] },
+    ],
+    blocks,
+  );
+  expect(claims[0]!.searchQueries).toEqual(["ЕС обвиняет США беспорядки"]);
+  expect(claims[2]!.searchQueries).toEqual([]);
+  expect(mergeDuplicates(claims, blocks)[0]!.searchQueries).toEqual(["ЕС обвиняет США беспорядки", "Путин интервью Зарубину ЕС США"]);
+});

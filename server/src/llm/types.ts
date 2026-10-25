@@ -16,6 +16,8 @@ export interface CheckInput {
   /** Тексты блоков, где встречается утверждение. */
   context: string[];
   article: ArticleContext;
+  /** Запросы, составленные при извлечении; если их нет, провайдер составит их сам. */
+  searchQueries?: string[];
 }
 
 export interface CheckOutcome {

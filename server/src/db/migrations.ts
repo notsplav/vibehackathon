@@ -89,4 +89,11 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE analyses ADD COLUMN fresh INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    version: 4,
+    name: "claim_search_queries",
+    // Запросы, составленные при извлечении утверждений: проверка не тратит на них отдельный вызов модели,
+    // в том числе после перезапуска сервера.
+    sql: `ALTER TABLE claims ADD COLUMN search_queries_json TEXT NOT NULL DEFAULT '[]';`,
+  },
 ];

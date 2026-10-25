@@ -89,6 +89,34 @@ describe("Ollama + SearXNG: модель локально, источники �
     expect(d.evidence.map((e) => e.url)).toEqual(["https://www.nobelprize.org/curie"]);
   });
 
+  test("запросы из извлечения: без отдельного вызова модели, оба поиска запускаются параллельно", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const { f, calls } = scenario(() => ({ json: { results: RESULTS } }));
+    const search: SearchProvider = {
+      name: "searxng",
+      problem: async () => null,
+      search: async (q) => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight--;
+        return q === "первый" ? [{ url: "https://a.example/1", title: "A", content: "a" }] : [{ url: "https://b.example/2", title: "B", content: "b" }];
+      },
+    };
+    const outcome = await checker(f, search).checkClaim({ ...input, searchQueries: ["первый", "второй", "третий"] });
+    expect(calls.filter(isChat).map((c) => system(c).slice(0, 30))).toEqual([expect.stringMatching(/^Определи вердикт/)]);
+    expect(outcome.searchQueries).toEqual(["первый", "второй"]);
+    expect(maxInFlight).toBe(2);
+    expect(outcome.citations.map((c) => c.url)).toEqual(["https://a.example/1", "https://b.example/2"]);
+  });
+
+  test("пустой ответ из-за заблокированных поисковиков — техническая ошибка, а не «источников нет»", async () => {
+    const { f } = scenario(() => ({ json: { results: [], unresponsive_engines: [["brave", "Suspended: too many requests"], ["duckduckgo", "CAPTCHA"]] } }));
+    const search = new SearxngSearch({ baseUrl: SEARXNG, retry: fast, perQuery: 5, fetch: f });
+    await expect(checker(f, search).checkClaim(input)).rejects.toMatchObject({ kind: "rate_limited", userText: expect.stringMatching(/brave, duckduckgo/) });
+  });
+
   test("SearXNG без JSON (403) — фатальная ошибка с подсказкой; не запущен — понятный текст", async () => {
     const forbidden = scenario(() => ({ status: 403, json: {} }));
     const s1 = new SearxngSearch({ baseUrl: SEARXNG, retry: fast, perQuery: 5, fetch: forbidden.f });
