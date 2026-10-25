@@ -162,6 +162,9 @@ export interface CreateAnalysisResponse {
 
 export interface HealthResponse {
   ok: boolean;
-  geminiConfigured: boolean;
+  /** Кто проверяет утверждения: Gemini с Google Search или локальная Ollama с Ollama Web Search. */
+  provider: "gemini" | "ollama";
   model: string;
+  /** Почему проверка сейчас невозможна (нет ключа, Ollama не запущена, модель не скачана); null — всё готово. */
+  problem: string | null;
 }

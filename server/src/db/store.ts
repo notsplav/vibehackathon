@@ -77,6 +77,8 @@ export class Store {
     cacheUrl: string;
     textHash: string;
     algorithmVersion: number;
+    /** Провайдер и модель, например "ollama:qwen3:14b". */
+    engine: string;
     metadata: ArticleMetadata;
     blocks: Block[];
   }): void {
@@ -84,23 +86,26 @@ export class Store {
     this.tx(() => {
       this.db
         .prepare(
-          `INSERT INTO analyses (id, url, canonical_url, cache_url, text_hash, algorithm_version, status, metadata_json, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
+          `INSERT INTO analyses (id, url, canonical_url, cache_url, text_hash, algorithm_version, engine, status, metadata_json, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
         )
-        .run(input.id, input.url, input.canonicalUrl, input.cacheUrl, input.textHash, input.algorithmVersion, JSON.stringify(input.metadata), ts, ts);
+        .run(input.id, input.url, input.canonicalUrl, input.cacheUrl, input.textHash, input.algorithmVersion, input.engine, JSON.stringify(input.metadata), ts, ts);
       const insert = this.db.prepare("INSERT INTO blocks (analysis_id, block_id, ord, type, text, links_json) VALUES (?, ?, ?, ?, ?, ?)");
       for (const b of input.blocks) insert.run(input.id, b.id, b.order, b.type, b.text, JSON.stringify(b.links));
     });
   }
 
-  /** Последний не прерванный анализ той же редакции статьи. */
-  findCached(cacheUrl: string, textHash: string, algorithmVersion: number): AnalysisRow | null {
+  /**
+   * Последний анализ той же редакции статьи той же моделью. Отменённые, упавшие и завершённые
+   * с общей ошибкой (например, исчерпана квота) не переиспользуются.
+   */
+  findCached(cacheUrl: string, textHash: string, algorithmVersion: number, engine: string): AnalysisRow | null {
     const row = this.db
       .prepare(
-        `SELECT * FROM analyses WHERE cache_url = ? AND text_hash = ? AND algorithm_version = ?
-           AND status NOT IN ('cancelled', 'failed') ORDER BY created_at DESC LIMIT 1`,
+        `SELECT * FROM analyses WHERE cache_url = ? AND text_hash = ? AND algorithm_version = ? AND engine = ?
+           AND status NOT IN ('cancelled', 'failed') AND error IS NULL ORDER BY created_at DESC LIMIT 1`,
       )
-      .get(cacheUrl, textHash, algorithmVersion) as Record<string, unknown> | undefined;
+      .get(cacheUrl, textHash, algorithmVersion, engine) as Record<string, unknown> | undefined;
     return row ? toAnalysisRow(row) : null;
   }
 

@@ -4,8 +4,8 @@ import { afterEach, describe, expect, test } from "vitest";
 import type { AnalysisState, ExtractedArticle } from "../../shared/contract.ts";
 import { loadConfig } from "../src/config.ts";
 import { Store } from "../src/db/store.ts";
-import type { CheckInput, CheckOutcome, FactChecker } from "../src/gemini/client.ts";
-import { GeminiError } from "../src/gemini/errors.ts";
+import { ModelError } from "../src/llm/errors.ts";
+import type { CheckInput, CheckOutcome, FactChecker } from "../src/llm/types.ts";
 import { createApp } from "../src/http.ts";
 import type { RawClaim } from "../src/pipeline/claims.ts";
 import { AnalysisRunner } from "../src/pipeline/runner.ts";
@@ -29,12 +29,12 @@ const article: ExtractedArticle = {
 
 /**
  * ТЕСТОВАЯ ЗАГЛУШКА модели: детерминированные ответы для проверки конвейера.
- * В работе сервер использует только GeminiFactChecker и никогда не подставляет демонстрационные данные.
+ * В работе сервер использует только GeminiFactChecker или OllamaFactChecker и никогда не подставляет демонстрационные данные.
  */
 class FakeChecker implements FactChecker {
   checkCalls = 0;
   gate: Promise<void> | null = null;
-  failWith: GeminiError | null = null;
+  failWith: ModelError | null = null;
 
   async extractClaims(): Promise<RawClaim[]> {
     return [
@@ -75,8 +75,8 @@ afterEach(() => {
 async function setup(checker: FactChecker | null = new FakeChecker()) {
   const config = { ...loadConfig({ ALLOWED_ORIGINS: ORIGIN }), dbPath: ":memory:", geminiApiKey: checker ? "test" : null };
   const store = new Store(":memory:");
-  const runner = new AnalysisRunner(store, checker, { concurrency: 2, chunkChars: 8000, apiKey: null }, { info() {}, warn() {} });
-  const server = createApp({ config, store, runner });
+  const runner = new AnalysisRunner(store, checker, { provider: "gemini", concurrency: 2, chunkChars: 8000, apiKey: null }, { info() {}, warn() {} });
+  const server = createApp({ config, store, runner, problem: async () => (checker ? null : "GEMINI_API_KEY не задан") });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   cleanup.push(() => server.close(), () => store.close());
   const port = (server.address() as AddressInfo).port;
@@ -122,7 +122,7 @@ describe("защита локального API", () => {
   test("health не раскрывает ключ", async () => {
     const { call } = await setup();
     const { body } = await call("GET", "/api/health");
-    expect(body).toEqual({ ok: true, geminiConfigured: true, model: "gemini-3.8-flash" });
+    expect(body).toEqual({ ok: true, provider: "gemini", model: "gemini-3.8-flash", problem: null });
   });
 });
 
@@ -179,7 +179,7 @@ test("отмена: готовые результаты сохраняются, 
 
 test("повторяющийся 429 останавливает проверки с понятной причиной", async () => {
   const checker = new FakeChecker();
-  checker.failWith = new GeminiError("rate_limited", "429", 429);
+  checker.failWith = new ModelError("rate_limited", "429", 429);
   const { call, waitFor } = await setup(checker);
   const { body } = await call("POST", "/api/analyses", { body: article });
   const state = await waitFor(body.analysisId, (s) => s.status === "completed");
