@@ -80,4 +80,10 @@ describe("видимые даты", () => {
     expect(wallTimesMatch(iso, parseVisibleDates("20 августа 2026, 12:15")[0]!)).toBe(true);
     expect(wallTimesMatch(iso, parseVisibleDates("20 августа 2026, 12:16")[0]!)).toBe(false);
   });
+
+  test("при явном местном поясе сдвиг на час не считается совпадением", () => {
+    const local = isoWallTime("2026-10-25T12:16:00+03:00")!;
+    expect(wallTimesMatch(local, parseVisibleDates("25 октября 2026, 12:16")[0]!)).toBe(true);
+    expect(wallTimesMatch(local, parseVisibleDates("обновлено: 13:16, 25 октября 2026")[0]!)).toBe(false);
+  });
 });

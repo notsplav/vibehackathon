@@ -15,6 +15,8 @@ export interface WallTime {
   day: number;
   hour: number | null;
   minute: number | null;
+  /** Время указано в UTC (`Z` или `+00:00`), а не в местном поясе. */
+  utc?: boolean;
 }
 
 const TIME = String.raw`(\d{1,2})[:.](\d{2})`;
@@ -67,15 +69,16 @@ function make(day: number, month: number, year: number | null, hour?: string, mi
 
 /** Местное время из ISO-строки (до приведения к UTC): так оно совпадает с подписью на странице. */
 export function isoWallTime(iso: string): WallTime | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(iso.trim());
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]00:?00)?)?/i.exec(iso.trim());
   if (!m) return null;
-  return { year: +m[1]!, month: +m[2]!, day: +m[3]!, hour: m[4] ? +m[4] : null, minute: m[5] ? +m[5] : null };
+  return { year: +m[1]!, month: +m[2]!, day: +m[3]!, hour: m[4] ? +m[4] : null, minute: m[5] ? +m[5] : null, utc: !!m[6] };
 }
 
 /**
  * Совпадают ли дата из разметки и видимая дата с точностью до минуты (если видимое время указано).
- * Разметка часто хранит время в UTC, а страница показывает местное, поэтому при указанном времени
- * допускается сдвиг на целое число часов (часовой пояс) при совпадении минут.
+ * Разметка часто хранит время в UTC, а страница показывает местное, поэтому для времени в UTC
+ * допускается сдвиг на целое число часов (часовой пояс) при совпадении минут. Если в разметке указан
+ * местный пояс, время должно совпасть точно.
  */
 export function wallTimesMatch(structured: WallTime, visible: WallTime): boolean {
   if (visible.hour === null) {
@@ -83,6 +86,10 @@ export function wallTimesMatch(structured: WallTime, visible: WallTime): boolean
     return visible.year === null || structured.year === visible.year;
   }
   if (structured.hour === null || structured.year === null || structured.minute !== visible.minute) return false;
+  if (!structured.utc) {
+    return structured.day === visible.day && structured.month === visible.month && structured.hour === visible.hour &&
+      (visible.year === null || structured.year === visible.year);
+  }
   const year = visible.year ?? structured.year;
   const a = Date.UTC(structured.year, structured.month - 1, structured.day, structured.hour, structured.minute ?? 0);
   const b = Date.UTC(year, visible.month - 1, visible.day, visible.hour, visible.minute ?? 0);

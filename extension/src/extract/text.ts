@@ -39,7 +39,12 @@ export function visibleText(el: Element): string {
   return normalizeSpace(parts.join(""));
 }
 
-const hiddenCache = new WeakMap<Element, boolean>();
+let hiddenCache = new WeakMap<Element, boolean>();
+
+/** Сбрасывает кэш видимости: страница могла измениться с прошлого извлечения. */
+export function resetVisibilityCache(): void {
+  hiddenCache = new WeakMap();
+}
 
 /** Признаки скрытого элемента, проверяемые без раскладки (подходит и для jsdom). */
 export function isHidden(el: Element): boolean {

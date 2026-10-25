@@ -13,7 +13,7 @@ import { headlineMatches, parseJsonLd, selectArticle, stringValue } from "./json
 import { probablyReaderable, runReadabilityOnClone } from "./readability.ts";
 import { isInExcludedRegion } from "./regions.ts";
 import { type RootCandidate, commonAncestor, findMarkedRoot, findScoredRoot, validateRoot } from "./root.ts";
-import { isHiddenDeep, normalizeForMatch, visibleText } from "./text.ts";
+import { isHiddenDeep, normalizeForMatch, resetVisibilityCache, visibleText } from "./text.ts";
 import { urlFragment } from "./url.ts";
 
 export interface ExtractionResult {
@@ -29,6 +29,7 @@ const SUBTITLE_CLASS = /(^|[\s_-])(subtitle|sub-?title|subhead\w*|lead|dek|stand
 const MIN_READABILITY_AGREEMENT = 0.6;
 
 export function extractArticle(doc: Document, pageUrl: string = doc.URL): ExtractionResult {
+  resetVisibilityCache();
   const warnings: string[] = [];
   const methods: string[] = [];
 
