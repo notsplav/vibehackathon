@@ -59,7 +59,12 @@ export function collectBodyBlocks(root: Element, skip: Set<Element>, warnings: s
   const emit = (el: Element, type: BlockType): void => {
     const text = visibleText(el);
     if (!text) return;
-    if (type !== "heading" && BOILERPLATE.test(text)) return;
+    if (BOILERPLATE.test(text)) return;
+    // Блок целиком внутри ссылки — карточка другой статьи, а не текст этой.
+    const link = el.closest("a[href]");
+    if (link && root.contains(link)) return;
+    // Заголовок-ссылка — карточка другой статьи («Читайте также»), а не раздел этой.
+    if (type === "heading" && linkDensity(el) > 0.8) return;
     // Абзац-ссылка вида «Читайте также: …» — это рекомендация, а не текст статьи.
     if (type === "paragraph" && text.length < 200 && linkDensity(el) > 0.8) return;
     out.push({ type, el, text, links: collectLinks(el) });
