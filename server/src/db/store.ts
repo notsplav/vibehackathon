@@ -288,6 +288,17 @@ export class Store {
     return row?.engine ?? null;
   }
 
+  getSetting<T>(key: string): T | undefined {
+    const row = this.db.prepare("SELECT value_json FROM settings WHERE key = ?").get(key) as { value_json: string } | undefined;
+    return row ? (JSON.parse(row.value_json) as T) : undefined;
+  }
+
+  setSetting(key: string, value: unknown): void {
+    this.db
+      .prepare("INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at")
+      .run(key, JSON.stringify(value), now());
+  }
+
   /** Анализы, прерванные остановкой сервера. */
   unfinishedIds(): string[] {
     return (this.db.prepare("SELECT id FROM analyses WHERE status IN ('queued', 'extracting_claims', 'checking')").all() as { id: string }[]).map(

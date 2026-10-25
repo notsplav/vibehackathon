@@ -10,23 +10,14 @@ import type { Config } from "./config.ts";
 import type { Store } from "./db/store.ts";
 import { ALGORITHM_VERSION, type AnalysisRunner } from "./pipeline/runner.ts";
 import { extractedArticleSchema } from "./schema.ts";
+import { type SettingsPort, settingsSchema } from "./settings.ts";
 
 export interface AppDeps {
   config: Config;
   store: Store;
   runner: AnalysisRunner;
-  /** Почему проверка сейчас невозможна (для /api/health); null — всё готово. */
-  problem: () => Promise<string | null>;
-}
-
-export function searchName(config: Config): string {
-  if (config.provider === "gemini") return "Google Search";
-  return config.searchProvider === "searxng" ? "SearXNG" : "Ollama Web Search";
-}
-
-/** Провайдер и модель анализа: часть ключа кэша. */
-export function engineOf(config: Config): string {
-  return `${config.provider}:${config.model}`;
+  /** Текущая модель и поиск, страница настроек. */
+  settings: SettingsPort;
 }
 
 class HttpError extends Error {
@@ -84,6 +75,16 @@ function readBody(req: IncomingMessage, limit: number): Promise<string> {
   });
 }
 
+async function readJson(req: IncomingMessage, limit: number): Promise<unknown> {
+  if (!/^application\/json\b/i.test(req.headers["content-type"] ?? "")) throw new HttpError(415, "Ожидается application/json");
+  try {
+    return JSON.parse(await readBody(req, limit));
+  } catch (e) {
+    if (e instanceof HttpError) throw e;
+    throw new HttpError(400, "Некорректный JSON");
+  }
+}
+
 /** Защита локального сервера от запросов со сторонних сайтов и от DNS rebinding. */
 function guard(req: IncomingMessage, config: Config): void {
   const host = (req.headers.host ?? "").replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
@@ -97,7 +98,7 @@ function guard(req: IncomingMessage, config: Config): void {
   if (mutating && !originAllowed) throw new HttpError(403, "Требуется Origin расширения");
 }
 
-export function createApp({ config, store, runner, problem }: AppDeps): Server {
+export function createApp({ config, store, runner, settings }: AppDeps): Server {
   const routes = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     guard(req, config);
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -105,22 +106,30 @@ export function createApp({ config, store, runner, problem }: AppDeps): Server {
     if (parts[0] !== "api") throw new HttpError(404, "Не найдено");
 
     if (parts[1] === "health" && parts.length === 2 && req.method === "GET") {
-      const body: HealthResponse = { ok: true, provider: config.provider, model: config.model, search: searchName(config), problem: await problem() };
+      const rt = settings.current();
+      const body: HealthResponse = { ok: true, provider: rt.provider, model: rt.model, search: rt.searchName, problem: await rt.problem() };
       return send(res, 200, body);
+    }
+
+    if (parts[1] === "settings" && parts.length === 2) {
+      if (req.method === "GET") return send(res, 200, await settings.describe());
+      if (req.method === "PUT") {
+        const parsed = settingsSchema.safeParse(await readJson(req, config.maxBodyBytes));
+        if (!parsed.success) {
+          const issue = parsed.error.issues[0];
+          throw new HttpError(400, `Неверные настройки: ${issue?.path.join(".") ?? ""} ${issue?.message ?? ""}`.trim());
+        }
+        const result = await settings.update(parsed.data);
+        if (!result.ok) throw new HttpError(422, result.error);
+        return send(res, 200, result.response);
+      }
+      throw new HttpError(405, "Метод не поддерживается");
     }
 
     if (parts[1] !== "analyses") throw new HttpError(404, "Не найдено");
 
     if (parts.length === 2 && req.method === "POST") {
-      if (!/^application\/json\b/i.test(req.headers["content-type"] ?? "")) throw new HttpError(415, "Ожидается application/json");
-      let json: unknown;
-      try {
-        json = JSON.parse(await readBody(req, config.maxBodyBytes));
-      } catch (e) {
-        if (e instanceof HttpError) throw e;
-        throw new HttpError(400, "Некорректный JSON");
-      }
-      const parsed = extractedArticleSchema.safeParse(json);
+      const parsed = extractedArticleSchema.safeParse(await readJson(req, config.maxBodyBytes));
       if (!parsed.success) {
         const issue = parsed.error.issues[0];
         throw new HttpError(400, `Неверный формат статьи: ${issue?.path.join(".") ?? ""} ${issue?.message ?? ""}`.trim());
@@ -135,7 +144,8 @@ export function createApp({ config, store, runner, problem }: AppDeps): Server {
       const hash = textHash(article.blocks);
       const key = cacheUrl(article.canonicalUrl ?? article.url);
       const force = url.searchParams.get("force") === "1";
-      const cached = force ? null : store.findCached(key, hash, ALGORITHM_VERSION, engineOf(config));
+      const engine = settings.current().engine;
+      const cached = force ? null : store.findCached(key, hash, ALGORITHM_VERSION, engine);
       if (cached) {
         // Прерванный перезапуском анализ продолжится.
         if (!["completed", "cancelled", "failed"].includes(cached.status)) runner.start(cached.id);
@@ -150,7 +160,7 @@ export function createApp({ config, store, runner, problem }: AppDeps): Server {
         cacheUrl: key,
         textHash: hash,
         algorithmVersion: ALGORITHM_VERSION,
-        engine: engineOf(config),
+        engine,
         fresh: force,
         metadata: article.metadata,
         blocks: article.blocks,

@@ -12,11 +12,14 @@ export class SearxngSearch implements SearchProvider {
   private readonly retry: RetryPolicy;
   private readonly perQuery: number;
   private readonly fetch: typeof fetch;
+  /** Поисковики для запроса; null — как включено в конфигурации SearXNG. */
+  private readonly engines: string[] | null;
 
-  constructor(opts: { baseUrl: string; retry: RetryPolicy; perQuery: number; fetch?: typeof fetch }) {
+  constructor(opts: { baseUrl: string; retry: RetryPolicy; perQuery: number; engines?: string[] | null; fetch?: typeof fetch }) {
     this.baseUrl = opts.baseUrl;
     this.retry = opts.retry;
     this.perQuery = opts.perQuery;
+    this.engines = opts.engines ?? null;
     this.fetch = opts.fetch ?? fetch;
   }
 
@@ -25,6 +28,7 @@ export class SearxngSearch implements SearchProvider {
     url.searchParams.set("q", query);
     url.searchParams.set("format", "json");
     url.searchParams.set("safesearch", "0");
+    if (this.engines?.length) url.searchParams.set("engines", this.engines.join(","));
     return url;
   }
 
@@ -79,5 +83,22 @@ export class SearxngSearch implements SearchProvider {
     if (res.status === 403) return "SearXNG отклоняет JSON-запросы: проверьте searxng/settings.yml (search.formats: json) и перезапустите.";
     if (res.status === 400 || res.ok) return null;
     return `SearXNG отвечает с ошибкой HTTP ${res.status}.`;
+  }
+}
+
+/** Поисковики, которые имеет смысл показывать в настройках: веб-поиск, а не переводчики и конвертеры. */
+const EXTRA_WEB = new Set(["wikipedia", "yandex", "yep", "mwmbl", "privacywall", "presearch", "mojeek", "startpage"]);
+
+export async function searxngEngines(baseUrl: string, f: typeof fetch = fetch): Promise<{ name: string; enabledByDefault: boolean }[]> {
+  try {
+    const res = await f(new URL("/config", baseUrl), { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { engines?: { name?: string; enabled?: boolean; categories?: string[] }[] };
+    return (data.engines ?? [])
+      .filter((e) => typeof e.name === "string" && e.categories?.includes("general") && (e.categories.includes("web") || EXTRA_WEB.has(e.name)))
+      .map((e) => ({ name: e.name!, enabledByDefault: e.enabled === true }))
+      .sort((a, b) => Number(b.enabledByDefault) - Number(a.enabledByDefault) || a.name.localeCompare(b.name));
+  } catch {
+    return [];
   }
 }

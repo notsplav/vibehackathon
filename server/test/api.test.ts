@@ -9,6 +9,7 @@ import type { CheckInput, CheckOutcome, FactChecker, StepCallback } from "../src
 import { createApp } from "../src/http.ts";
 import type { RawClaim } from "../src/pipeline/claims.ts";
 import { AnalysisRunner } from "../src/pipeline/runner.ts";
+import type { SettingsPort } from "../src/settings.ts";
 
 const ORIGIN = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
 
@@ -79,8 +80,16 @@ afterEach(() => {
 async function setup(checker: FactChecker | null = new FakeChecker()) {
   const config = { ...loadConfig({ ALLOWED_ORIGINS: ORIGIN }), dbPath: ":memory:", geminiApiKey: checker ? "test" : null };
   const store = new Store(":memory:");
-  const runner = new AnalysisRunner(store, checker, { provider: "gemini", concurrency: 2, chunkChars: 8000, apiKey: null, reuseHours: 24 }, { info() {}, warn() {} });
-  const server = createApp({ config, store, runner, problem: async () => (checker ? null : "GEMINI_API_KEY не задан") });
+  const runner = new AnalysisRunner(store, () => ({ provider: "gemini", checker, secret: null, concurrency: 2 }), { chunkChars: 8000, reuseHours: 24 }, { info() {}, warn() {} });
+  // Настройки здесь не проверяются (см. settings.test.ts): фиксированная конфигурация Gemini.
+  const settings: SettingsPort = {
+    current: () => ({ provider: "gemini", model: "gemini-3.8-flash", searchName: "Google Search", engine: "gemini:gemini-3.8-flash", problem: async () => (checker ? null : "GEMINI_API_KEY не задан") }),
+    describe: async () => {
+      throw new Error("не используется");
+    },
+    update: async () => ({ ok: false, error: "не используется" }),
+  };
+  const server = createApp({ config, store, runner, settings });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   cleanup.push(() => server.close(), () => store.close());
   const port = (server.address() as AddressInfo).port;

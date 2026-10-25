@@ -20,13 +20,18 @@ export const ALGORITHM_VERSION = 1;
 const MAX_CONSECUTIVE_RETRYABLE = 2;
 
 export interface RunnerOptions {
-  provider: Provider;
-  concurrency: number;
   chunkChars: number;
-  /** Секрет, который вырезается из сообщений об ошибках. */
-  apiKey: string | null;
   /** Сколько часов переиспользовать результат такого же утверждения из другого анализа; 0 — никогда. */
   reuseHours: number;
+}
+
+/** Модель и параллелизм, с которыми идёт анализ. Берутся при старте и не меняются до его конца. */
+export interface RunContext {
+  provider: Provider;
+  checker: FactChecker | null;
+  /** Секрет, который вырезается из сообщений об ошибках. */
+  secret: string | null;
+  concurrency: number;
 }
 
 export interface Logger {
@@ -37,6 +42,7 @@ export interface Logger {
 interface RunState {
   controller: AbortController;
   cancelled: boolean;
+  rt: RunContext;
 }
 
 export class AnalysisRunner {
@@ -44,18 +50,19 @@ export class AnalysisRunner {
   /** Живой ход идущих анализов; в SQLite не пишется, после перезапуска начинается заново. */
   private readonly live = new Map<string, LiveProgress>();
   private readonly store: Store;
-  private readonly checker: FactChecker | null;
+  /** Текущая конфигурация; меняется со страницы настроек. */
+  private readonly context: () => RunContext;
   private readonly options: RunnerOptions;
   private readonly log: Logger;
 
   constructor(
     store: Store,
-    checker: FactChecker | null,
+    context: () => RunContext,
     options: RunnerOptions,
     log: Logger,
   ) {
     this.store = store;
-    this.checker = checker;
+    this.context = context;
     this.options = options;
     this.log = log;
   }
@@ -71,17 +78,17 @@ export class AnalysisRunner {
 
   start(id: string): void {
     if (this.running.has(id)) return;
-    const state: RunState = { controller: new AbortController(), cancelled: false };
+    const state: RunState = { controller: new AbortController(), cancelled: false, rt: this.context() };
     this.running.set(id, state);
     this.live.set(id, { extraction: null, checking: [] });
     this.run(id, state)
       .catch((e) => {
         // Анализ мог быть удалён во время работы — тогда писать уже некуда.
         if (!this.store.getAnalysisRow(id)) return;
-        const err = classifyError(e, this.options.apiKey);
+        const err = classifyError(e, state.rt.secret);
         this.log.warn(`analysis ${id} failed: ${err.kind}`);
-        this.store.moveClaims(id, ["queued", "checking"], "failed", this.describe(err));
-        this.store.setStatus(id, "failed", this.describe(err));
+        this.store.moveClaims(id, ["queued", "checking"], "failed", this.describe(state.rt, err));
+        this.store.setStatus(id, "failed", this.describe(state.rt, err));
       })
       .finally(() => {
         this.running.delete(id);
@@ -119,18 +126,20 @@ export class AnalysisRunner {
     }
   }
 
-  private message(kind: ModelErrorKind): string {
-    return userMessage(kind, this.options.provider);
+  private message(rt: RunContext, kind: ModelErrorKind): string {
+    return userMessage(kind, rt.provider);
   }
 
-  private describe(err: ModelError): string {
-    return err.userText ?? this.message(err.kind);
+  private describe(rt: RunContext, err: ModelError): string {
+    return err.userText ?? this.message(rt, err.kind);
   }
 
   private async run(id: string, state: RunState): Promise<void> {
     const signal = state.controller.signal;
-    if (!this.checker) {
-      this.store.setStatus(id, "failed", this.message("not_configured"));
+    const rt = state.rt;
+    const checker = rt.checker;
+    if (!checker) {
+      this.store.setStatus(id, "failed", this.message(rt, "not_configured"));
       return;
     }
     const row = this.store.getAnalysisRow(id);
@@ -149,7 +158,7 @@ export class AnalysisRunner {
       live.extraction = { done: 0, total: chunks.length };
       this.log.info(`${tag}: выделяем утверждения из ${blocks.length} блоков (частей: ${chunks.length}) — «${article.title ?? article.url}»`);
       for (const chunk of chunks) {
-        raw.push(...(await this.checker.extractClaims(article, chunk, signal)));
+        raw.push(...(await checker.extractClaims(article, chunk, signal)));
         live.extraction.done++;
         if (state.cancelled) break;
       }
@@ -212,7 +221,7 @@ export class AnalysisRunner {
         live.checking.push(current);
         const claimStarted = Date.now();
         try {
-          const outcome = await this.checker!.checkClaim(
+          const outcome = await checker.checkClaim(
             {
               claim: claim.normalizedClaim,
               kind: claim.kind,
@@ -248,14 +257,14 @@ export class AnalysisRunner {
           lastRetryable = null;
         } catch (e) {
           if (signal.aborted) return;
-          const err = e instanceof ModelError ? e : classifyError(e, this.options.apiKey);
-          this.store.updateClaim(id, claimId, { status: "failed", error: this.describe(err), checkedAt: now() });
+          const err = e instanceof ModelError ? e : classifyError(e, rt.secret);
+          this.store.updateClaim(id, claimId, { status: "failed", error: this.describe(rt, err), checkedAt: now() });
           this.log.warn(`${tag}: ${claimId} → ошибка ${err.kind} (${seconds(claimStarted)} с)`);
-          if (err.fatal) fatal = this.describe(err);
+          if (err.fatal) fatal = this.describe(rt, err);
           else if (err.retryable) {
             lastRetryable = lastRetryable?.kind === err.kind ? { kind: err.kind, count: lastRetryable.count + 1 } : { kind: err.kind, count: 1 };
             if (lastRetryable.count >= MAX_CONSECUTIVE_RETRYABLE) {
-              fatal = err.userText ?? this.message(err.kind === "rate_limited" ? "quota_exhausted" : err.kind);
+              fatal = err.userText ?? this.message(rt, err.kind === "rate_limited" ? "quota_exhausted" : err.kind);
             }
           }
         } finally {
@@ -263,7 +272,7 @@ export class AnalysisRunner {
         }
       }
     };
-    await Promise.all(Array.from({ length: this.options.concurrency }, worker));
+    await Promise.all(Array.from({ length: rt.concurrency }, worker));
     if (signal.aborted || state.cancelled) return;
 
     this.log.info(`${tag}: проверка ${fatal ? "остановлена" : "завершена"} за ${seconds(started)} с${fatal ? ` — ${fatal}` : ""}`);
@@ -279,7 +288,7 @@ export class AnalysisRunner {
     const finalClaims = this.store.getClaims(id);
     if (fatal || finalClaims.every((c) => c.status !== "checked")) return;
     try {
-      const summary = await this.checker.summarize(
+      const summary = await checker.summarize(
         {
           stats: computeStats(finalClaims),
           preliminary: false,
@@ -289,7 +298,7 @@ export class AnalysisRunner {
       );
       this.store.setSummary(id, summary);
     } catch (e) {
-      this.log.warn(`analysis ${id}: summary failed (${classifyError(e, this.options.apiKey).kind})`);
+      this.log.warn(`analysis ${id}: summary failed (${classifyError(e, rt.secret).kind})`);
     }
   }
 }
