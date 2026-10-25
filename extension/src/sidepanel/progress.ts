@@ -133,15 +133,20 @@ export function renderProgress(a: AnalysisState, lastPollAt: number | null): HTM
   const active = !!a.live;
 
   const head = h("div", "progress-head");
-  head.append(h("span", `status-pill ${active ? "is-active" : a.error || a.status === "cancelled" ? "is-warn" : "is-done"}`, active ? "Идёт анализ" : a.status === "cancelled" ? "Отменён" : a.error ? "Остановлен" : "Готово"));
-  if (active) head.append(timer(a.createdAt, "идёт "));
+  // Статус и время — в одной плашке: «Анализ идёт · 2:34».
+  if (active) {
+    const pill = timer(a.createdAt, "Анализ идёт · ");
+    pill.className = "status-pill is-active";
+    head.append(pill);
+  } else {
+    head.append(h("span", `status-pill ${a.error || a.status === "cancelled" ? "is-warn" : "is-done"}`, a.status === "cancelled" ? "Отменён" : a.error ? "Остановлен" : "Готово"));
+  }
   if (active && lastPollAt) {
     const ago = h("span", "ago");
     ago.dataset.ago = String(lastPollAt);
     head.append(ago);
   }
   section.append(head);
-  if (a.preliminary || a.status === "cancelled") section.append(h("div", "badge-preliminary", "Предварительный результат"));
 
   // Шаги этапов.
   const list = h("ol", "steps");

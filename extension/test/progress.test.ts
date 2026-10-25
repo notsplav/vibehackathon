@@ -61,6 +61,8 @@ test("панель показывает текущее действие, зап�
   expect(el.querySelector(".now")!.textContent).toContain("ищем источники");
   expect(el.querySelector(".now-queries")!.textContent).toBe("Запросы: «Кюри 1867»");
   expect(el.querySelectorAll(".spinner").length).toBeGreaterThan(0);
+  expect(el.querySelector(".status-pill")!.textContent).toMatch(/^Анализ идёт · (\d+ с|\d+:\d\d)$/);
+  expect(el.textContent).not.toContain("Предварительный результат");
   tick(el, Date.now() + 60_000);
   expect(el.querySelector(".now .timer")!.textContent).toMatch(/^1:0\d$/);
 });
