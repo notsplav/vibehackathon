@@ -5,6 +5,7 @@ import type { AnalysisState, ArticleMetadata, Claim, ExtractedArticle, HealthRes
 import { LABELS, displayState } from "../labels.ts";
 import type { ExtractReply, PanelMessage, RenderReply } from "../messages.ts";
 import { ApiError, api } from "./api.ts";
+import { type IconName, icon } from "./icons.ts";
 import { liveStep, renderProgress, tick } from "./progress.ts";
 
 const POLL_MS = 1500;
@@ -296,17 +297,54 @@ function privacyText(health: HealthResponse | null): string {
   return "Текст статьи уйдёт через локальный сервер в Gemini API для поиска источников. Без нажатия кнопки ничего не отправляется.";
 }
 
-/** Стартовый экран: крупная кнопка по центру панели и короткое пояснение под ней. */
+/** Стартовый экран: одна кнопка по центру панели и короткое пояснение под ней. */
 function startScreen(): HTMLElement {
-  const start = h(
+  return h(
     "section",
     { cls: "start" },
-    h("div", { cls: "start-icon", text: "✓" }),
-    h("h2", { cls: "start-title", text: "Проверить статью" }),
-    h("p", { cls: "start-hint", text: "Найдём проверяемые утверждения и сверим их с источниками." }),
+    button("Начать проверку", () => void analyze(false), "primary cta"),
+    h("p", { cls: "privacy", text: privacyText(view.health) }),
   );
-  start.append(button("Проанализировать статью", () => void analyze(false), "primary cta"), h("p", { cls: "privacy", text: privacyText(view.health) }));
-  return start;
+}
+
+/** Удаление подтверждается вторым нажатием в течение нескольких секунд. */
+const DELETE_CONFIRM_MS = 3000;
+let deleteArmedUntil = 0;
+
+function iconButton(name: IconName, label: string, onClick: () => void, cls = ""): HTMLButtonElement {
+  const b = h("button", { cls: `icon-btn ${cls}`.trim() });
+  b.type = "button";
+  b.title = label;
+  b.setAttribute("aria-label", label);
+  b.disabled = view.busy !== null;
+  b.append(icon(document, name));
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function actionButtons(a: AnalysisState): HTMLElement {
+  const bar = h("div", { cls: "head-actions" });
+  if (!TERMINAL.has(a.status)) bar.append(iconButton("stop", "Остановить проверку", () => void cancel()));
+  bar.append(iconButton("retry", "Проверить заново", () => void analyze(true)));
+  const armed = Date.now() < deleteArmedUntil;
+  bar.append(
+    iconButton(
+      "trash",
+      armed ? "Нажмите ещё раз, чтобы удалить результат" : "Удалить результат",
+      () => {
+        if (Date.now() < deleteArmedUntil) {
+          deleteArmedUntil = 0;
+          void removeResult();
+          return;
+        }
+        deleteArmedUntil = Date.now() + DELETE_CONFIRM_MS;
+        render();
+        setTimeout(render, DELETE_CONFIRM_MS + 50);
+      },
+      armed ? "danger is-armed" : "danger",
+    ),
+  );
+  return bar;
 }
 
 function render(): void {
@@ -324,11 +362,7 @@ function render(): void {
   if (idle) children.push(startScreen());
 
   if (a) {
-    children.push(renderProgress(a, lastPollAt));
-    const actions = h("div", { cls: "actions" });
-    if (!TERMINAL.has(a.status)) actions.append(button("Отменить", () => void cancel()));
-    actions.append(button("Повторить анализ", () => void analyze(true)), button("Удалить результат", () => void removeResult(), "danger"));
-    children.push(actions);
+    children.push(renderProgress(a, lastPollAt, actionButtons(a)));
     const facts = a.claims.filter((c) => c.status !== "opinion");
     const opinions = a.claims.filter((c) => c.status === "opinion");
     if (facts.length) children.push(h("h3", { text: "Утверждения" }), h("ul", { cls: "claims" }, ...facts.map((c) => claimItem(c, a))));

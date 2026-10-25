@@ -119,16 +119,17 @@ export function tick(root: ParentNode, now = Date.now()): void {
   for (const el of Array.from(root.querySelectorAll<HTMLElement>("[data-since]"))) {
     el.textContent = `${el.dataset.prefix ?? ""}${formatDuration(now - Date.parse(el.dataset.since!))}`;
   }
+  // Давность последнего ответа сервера — в подсказке плашки; если ответа долго нет, плашка желтеет.
   for (const el of Array.from(root.querySelectorAll<HTMLElement>("[data-ago]"))) {
     const sec = Math.round((now - Number(el.dataset.ago)) / 1000);
-    el.textContent = sec < 3 ? "обновлено только что" : `обновлено ${sec} с назад`;
+    el.title = sec < 3 ? "Данные обновлены только что" : `Данные обновлены ${sec} с назад`;
     el.classList.toggle("stale", sec > 10);
   }
 }
 
 const ICON: Record<StepState, string> = { done: "✓", active: "", pending: "", error: "!", skipped: "–" };
 
-export function renderProgress(a: AnalysisState, lastPollAt: number | null): HTMLElement {
+export function renderProgress(a: AnalysisState, lastPollAt: number | null, actions?: HTMLElement): HTMLElement {
   const section = h("section", "progress");
   const active = !!a.live;
 
@@ -137,15 +138,12 @@ export function renderProgress(a: AnalysisState, lastPollAt: number | null): HTM
   if (active) {
     const pill = timer(a.createdAt, "Анализ идёт · ");
     pill.className = "status-pill is-active";
+    if (lastPollAt) pill.dataset.ago = String(lastPollAt);
     head.append(pill);
   } else {
     head.append(h("span", `status-pill ${a.error || a.status === "cancelled" ? "is-warn" : "is-done"}`, a.status === "cancelled" ? "Отменён" : a.error ? "Остановлен" : "Готово"));
   }
-  if (active && lastPollAt) {
-    const ago = h("span", "ago");
-    ago.dataset.ago = String(lastPollAt);
-    head.append(ago);
-  }
+  if (actions) head.append(actions);
   section.append(head);
 
   // Шаги этапов.
