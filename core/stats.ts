@@ -1,6 +1,6 @@
 // Статистика считается сервером по уникальным claims (ТЗ 7, этап C). Мнения не входят в знаменатель.
 
-import { type AnalysisStats, type Claim, VERDICTS, type Verdict } from "../../../shared/contract.ts";
+import { type AnalysisStats, type Claim, VERDICTS, type Verdict } from "../shared/contract.ts";
 
 export function computeStats(claims: Pick<Claim, "status" | "verdict">[]): AnalysisStats {
   const byVerdict = Object.fromEntries(VERDICTS.map((v) => [v, 0])) as Record<Verdict, number>;

@@ -1,8 +1,8 @@
 // Этап A: подготовка блоков для Gemini, проверка ответа и объединение дубликатов (ТЗ 6.2, 7).
 // Ответ модели — недоверенные данные: каждый blockId и фрагмент проверяются по сохранённым блокам.
 
-import type { ArticleFocus, Block, ClaimKind, ClaimOccurrence } from "../../../shared/contract.ts";
-import { foldChars, normalizeForMatch, normalizeSpace, wordSimilarity } from "../../../shared/text.ts";
+import type { ArticleFocus, Block, ClaimKind, ClaimOccurrence } from "../shared/contract.ts";
+import { foldChars, normalizeForMatch, normalizeSpace, wordSimilarity } from "../shared/text.ts";
 
 const KINDS: ClaimKind[] = ["event", "date", "number", "quote", "attribution", "other"];
 const DUPLICATE_SIMILARITY = 0.85;

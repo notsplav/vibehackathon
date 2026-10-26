@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Block } from "../../shared/contract.ts";
-import { chunkBlocks, mergeDuplicates, restrictToFocus, validateClaims } from "../src/pipeline/claims.ts";
+import { chunkBlocks, mergeDuplicates, restrictToFocus, validateClaims } from "../claims.ts";
 
 const blocks: Block[] = [
   { id: "b1", type: "title", order: 1, text: "Путин сделал заявление о беспорядках в ЕС", links: [] },
