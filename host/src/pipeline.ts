@@ -163,7 +163,8 @@ export async function analyze(
             model: options.checkModel,
             tools: ["WebSearch"],
             jsonSchema: CHECK_SCHEMA,
-            maxTurns: 8,
+            // Ходов ≈ поисков + 2: правила просят не больше 3 поисков, предел 6 ходов страхует от перебора.
+            maxTurns: 6,
             maxBudgetUsd: options.maxBudgetPerCall,
             signal,
             onSearch: (q) => {
