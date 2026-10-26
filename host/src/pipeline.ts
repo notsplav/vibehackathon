@@ -93,17 +93,27 @@ export async function analyze(
   emit({ type: "stage", id, status: "extracting_claims" });
   emit({ type: "live", id, live });
   const blocks = checkableBlocks(article.blocks);
-  const extraction = await run({
-    bin: options.claudeBin,
-    prompt: extractInput(meta, blocks, focus),
-    systemPrompt: extractSystem(EXTRACT_SYSTEM, focus),
-    model: options.extractModel,
-    tools: [],
-    jsonSchema: EXTRACT_SCHEMA,
-    maxTurns: 3,
-    maxBudgetUsd: options.maxBudgetPerCall,
-    signal,
-  });
+  let extraction: ClaudeResult;
+  try {
+    extraction = await run({
+      bin: options.claudeBin,
+      prompt: extractInput(meta, blocks, focus),
+      systemPrompt: extractSystem(EXTRACT_SYSTEM, focus),
+      model: options.extractModel,
+      tools: [],
+      jsonSchema: EXTRACT_SCHEMA,
+      maxTurns: 3,
+      maxBudgetUsd: options.maxBudgetPerCall,
+      signal,
+    });
+  } catch (e) {
+    // Отмена во время выделения утверждений — это отмена, а не ошибка.
+    if (signal.aborted) {
+      emit({ type: "stage", id, status: "cancelled" });
+      return;
+    }
+    throw e;
+  }
   spend(extraction);
   const raw = ((extraction.structured as { claims?: unknown })?.claims ?? []) as RawClaim[];
   const focusIds = focus ? new Set(focus.blockIds) : null;

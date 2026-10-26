@@ -79,11 +79,14 @@ function fail(s: AnalysisState, error: string): AnalysisState {
 }
 
 function update(id: string, change: (s: AnalysisState) => AnalysisState): Promise<unknown> {
-  writes = writes.then(async () => {
-    const key = analysisKey(id);
-    const s = ((await chrome.storage.local.get(key)) as Record<string, AnalysisState | undefined>)[key];
-    if (s) await chrome.storage.local.set({ [key]: change(s) });
-  });
+  writes = writes
+    .then(async () => {
+      const key = analysisKey(id);
+      const s = ((await chrome.storage.local.get(key)) as Record<string, AnalysisState | undefined>)[key];
+      if (s) await chrome.storage.local.set({ [key]: change(s) });
+    })
+    // Одна неудачная запись не должна останавливать все следующие события.
+    .catch((e: unknown) => console.warn("Сверка: не удалось сохранить событие проверки", e));
   return writes;
 }
 
@@ -180,8 +183,20 @@ chrome.runtime.onMessage.addListener((req: BgRequest, _sender, sendResponse) => 
 
 // Если Chrome перезапустил фоновый скрипт, соединение с помощником потеряно: незавершённые проверки
 // помечаются прерванными, чтобы панель не ждала их вечно.
+/** Сколько последних проверок хранить: старые удаляются, чтобы не упереться в квоту storage. */
+const KEEP_ANALYSES = 30;
+
 const recovered = (async () => {
   const all = (await chrome.storage.local.get(null)) as Record<string, unknown>;
+  const analyses = Object.entries(all)
+    .filter(([key, value]) => key.startsWith("analysis:") && !key.startsWith("analysis:http") && typeof (value as AnalysisState)?.createdAt === "string")
+    .sort(([, a], [, b]) => ((b as AnalysisState).createdAt > (a as AnalysisState).createdAt ? 1 : -1));
+  const stale = new Set(analyses.slice(KEEP_ANALYSES).map(([key]) => key));
+  if (stale.size) {
+    const pages = Object.entries(all).filter(([key, v]) => key.startsWith("page:") && stale.has(analysisKey((v as PageEntry).analysisId))).map(([key]) => key);
+    await chrome.storage.local.remove([...stale, ...pages]);
+    for (const key of stale) delete all[key];
+  }
   for (const [key, value] of Object.entries(all)) {
     // Записи старой версии с сервером («analysis:<url>») больше не нужны.
     if (key.startsWith("analysis:http")) {

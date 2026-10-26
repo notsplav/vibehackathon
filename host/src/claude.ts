@@ -5,7 +5,7 @@
 
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 
 export interface SearchHit {
@@ -61,15 +61,24 @@ export class ClaudeError extends Error {
  * без них Claude Code не читает учётные данные из Связки ключей macOS. Окружение браузера не наследуется.
  */
 export function childEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const user = base.USER || base.LOGNAME || "";
+  // Если браузер не передал USER/HOME, берём их из системы: без них вход в Claude Code не читается.
+  const user = base.USER || base.LOGNAME || safeUser();
   return {
-    HOME: base.HOME ?? "",
+    HOME: base.HOME || homedir(),
     USER: user,
     LOGNAME: base.LOGNAME || user,
     PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
     LANG: base.LANG || "en_US.UTF-8",
     ...(base.TMPDIR ? { TMPDIR: base.TMPDIR } : {}),
   };
+}
+
+function safeUser(): string {
+  try {
+    return userInfo().username;
+  } catch {
+    return "";
+  }
 }
 
 export function claudeArgs(o: Omit<ClaudeOptions, "bin" | "signal" | "onSearch">): string[] {

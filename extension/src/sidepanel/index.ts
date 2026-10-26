@@ -79,6 +79,20 @@ const EXTRACTION_ERRORS: Record<string, string> = {
   low_confidence: "Не удалось надёжно определить основной текст статьи, поэтому он не отправлен на проверку.",
 };
 
+/** Статус помощника кэшируется на минуту: каждая проверка статуса запускает процесс помощника. */
+let statusCache: { at: number; status: HostStatus } | null = null;
+
+async function hostStatus(): Promise<HostStatus> {
+  if (statusCache && Date.now() - statusCache.at < 60_000) return statusCache.status;
+  const status = await bg({ type: "bg:status" }).then(
+    (r) => r.status ?? { ready: false, problem: "Нет ответа от фонового скрипта.", extractModel: null, checkModel: null },
+    (e) => ({ ready: false, problem: message(e), extractModel: null, checkModel: null }),
+  );
+  // Ошибку не кэшируем: пользователь мог только что установить помощника.
+  if (status.ready) statusCache = { at: Date.now(), status };
+  return status;
+}
+
 async function readAnalysis(id: string): Promise<AnalysisState | null> {
   const key = analysisKey(id);
   return ((await chrome.storage.local.get(key)) as Record<string, AnalysisState | undefined>)[key] ?? null;
@@ -91,10 +105,7 @@ async function init(): Promise<void> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   Object.assign(view, { tabId: tab?.id ?? null, url: tab?.url ?? null, saved: null, analysis: null, metadata: null, busy: null, error: null, notice: null, stale: false });
   render();
-  bg({ type: "bg:status" }).then(
-    (r) => ((view.host = r.status ?? null), render()),
-    (e) => ((view.host = { ready: false, problem: message(e), extractModel: null, checkModel: null }), render()),
-  );
+  void hostStatus().then((status) => ((view.host = status), render()));
   if (!view.url) return;
   const key = pageKey(view.url);
   const saved = ((await chrome.storage.local.get(key)) as Record<string, PageEntry | undefined>)[key] ?? null;

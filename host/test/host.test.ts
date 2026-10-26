@@ -61,6 +61,10 @@ describe("разбор вывода Claude Code", () => {
   test("окружение процесса собирается заново: только вход по подписке, без переменных браузера", () => {
     const env = childEnv({ HOME: "/home/u", USER: "u", LOGNAME: "u", PATH: "/opt/x", SECRET_TOKEN: "x", LANG: "ru_RU.UTF-8" });
     expect(env).toEqual({ HOME: "/home/u", USER: "u", LOGNAME: "u", PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LANG: "ru_RU.UTF-8" });
+    // Браузер не передал USER и HOME — берутся из системы, иначе вход в Claude Code не читается.
+    const fallback = childEnv({});
+    expect(fallback.USER).toBeTruthy();
+    expect(fallback.HOME).toBeTruthy();
   });
 });
 
@@ -211,6 +215,17 @@ describe("конвейер", () => {
     for (const e of events) if (e.type === "claim") final.set(e.claim.id, e.claim);
     expect([...final.values()].map((c) => c.status)).toEqual(["failed", "failed"]);
     expect(events.at(-1)).toMatchObject({ type: "stage", status: "completed", error: expect.stringMatching(/лимит/) });
+  });
+
+  test("отмена во время выделения утверждений — статус «отменено», а не ошибка", async () => {
+    const controller = new AbortController();
+    const { runner } = fakeRunner(() => {
+      controller.abort();
+      return new ClaudeError("cancelled", "Отменено");
+    });
+    const events: HostEvent[] = [];
+    await analyze("a4", article, { ...DEFAULT_OPTIONS, claudeBin: "claude" }, (e) => events.push(e), controller.signal, runner);
+    expect(events.at(-1)).toEqual({ type: "stage", id: "a4", status: "cancelled" });
   });
 
   test("отмена: начатые и ожидающие проверки — not_checked", async () => {
