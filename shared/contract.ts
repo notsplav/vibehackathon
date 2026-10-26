@@ -133,7 +133,7 @@ export interface Claim {
   checkedAt?: string | null;
 }
 
-// --- API локального сервера ---
+// --- Состояние проверки (хранится в расширении) ---
 
 export type AnalysisStatus = "queued" | "extracting_claims" | "checking" | "completed" | "cancelled" | "failed";
 
@@ -166,7 +166,7 @@ export interface AnalysisState {
   status: AnalysisStatus;
   /** Проверка выделенного фрагмента; null — проверяется вся статья. */
   focus: ArticleFocus | null;
-  /** true, пока не завершены все проверки: интерфейс показывает «предварительный результат». */
+  /** true, пока не завершены все проверки. */
   preliminary: boolean;
   url: string;
   canonicalUrl: string | null;
@@ -179,60 +179,4 @@ export interface AnalysisState {
   live: LiveProgress | null;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface CreateAnalysisResponse {
-  analysisId: string;
-  status: AnalysisStatus;
-  /** true, если результат взят из кэша по URL и хэшу текста. */
-  cached: boolean;
-}
-
-// --- Настройки сервера (страница настроек расширения) ---
-
-export type LlmProvider = "gemini" | "ollama";
-export type SearchProviderId = "searxng" | "ollama";
-
-/** Что выбрано пользователем. Ключи API здесь не передаются: они только в .env сервера. */
-export interface ServerSettings {
-  provider: LlmProvider;
-  model: string;
-  /** Поиск источников для Ollama (у Gemini — встроенный Google Search). */
-  searchProvider: SearchProviderId;
-  /** Поисковики SearXNG; null — как включено в конфигурации SearXNG. */
-  searxngEngines: string[] | null;
-  queriesPerClaim: number;
-}
-
-export interface SettingsChoice<T extends string> {
-  id: T;
-  label: string;
-  available: boolean;
-  /** Почему вариант недоступен или что о нём нужно знать. */
-  note: string | null;
-}
-
-export interface SettingsOptions {
-  providers: SettingsChoice<LlmProvider>[];
-  /** Доступные модели по провайдерам; пустой список — получить не удалось (см. note провайдера). */
-  models: Record<LlmProvider, string[]>;
-  searchProviders: SettingsChoice<SearchProviderId>[];
-  /** Веб-поисковики SearXNG; пусто, если SearXNG недоступен. */
-  searxngEngines: { name: string; enabledByDefault: boolean }[];
-}
-
-export interface SettingsResponse {
-  settings: ServerSettings;
-  options: SettingsOptions;
-}
-
-export interface HealthResponse {
-  ok: boolean;
-  /** Кто проверяет утверждения: Gemini с Google Search или локальная Ollama с поиском. */
-  provider: LlmProvider;
-  model: string;
-  /** Чем ищутся источники, для показа пользователю: «Google Search», «SearXNG», «Ollama Web Search». */
-  search: string;
-  /** Почему проверка сейчас невозможна (нет ключа, Ollama не запущена, модель не скачана); null — всё готово. */
-  problem: string | null;
 }

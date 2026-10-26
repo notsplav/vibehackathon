@@ -12,10 +12,6 @@
   "side_panel": {
     "default_path": "sidepanel.html"
   },
-  "options_ui": {
-    "page": "options.html",
-    "open_in_tab": false
-  },
   "background": {
     "service_worker": "background.js"
   },
@@ -24,9 +20,7 @@
     "scripting",
     "sidePanel",
     "storage",
-    "contextMenus"
-  ],
-  "host_permissions": [
-    "http://127.0.0.1:8787/*"
+    "contextMenus",
+    "nativeMessaging"
   ]
 }

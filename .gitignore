@@ -11,6 +11,8 @@ CLAUDE.local.md
 fixtures/local/
 
 # Зависимости и сборка
+# Обёртка помощника с путями этой машины (npm run install:host)
+host/bin/
 node_modules/
 dist/
 coverage/

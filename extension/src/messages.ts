@@ -13,10 +13,6 @@ export type PanelMessage =
 export type ExtractReply = { ok: true; article: ExtractedArticle; fingerprint: string } | { ok: false; error: string };
 export type RenderReply = { ok: true; stale: boolean; marked: number } | { ok: false; error: string };
 
-export const SERVER_URL = "http://127.0.0.1:8787";
-
-/** Страница настроек сообщает панели, что модель или поиск изменились. */
-export const SETTINGS_CHANGED = "vh:settings-changed";
 
 /** Контекстное меню «Сверка: проверить выделенное» просит панель проверить выделение во вкладке. */
 export const CHECK_SELECTION = "vh:check-selection";

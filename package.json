@@ -7,18 +7,12 @@
   },
   "workspaces": [
     "extension",
-    "server"
+    "host"
   ],
   "scripts": {
+    "install:host": "node host/scripts/install.ts",
     "build:extension": "npm run build -w extension",
-    "dev:server": "npm run dev -w server",
-    "start:server": "npm run start -w server",
-    "probe:gemini": "npm run probe:gemini -w server",
-    "probe:ollama": "npm run probe:ollama -w server",
-    "searxng:up": "npm run searxng:up -w server",
-    "searxng:down": "npm run searxng:down -w server",
-    "searxng:status": "npm run searxng:status -w server",
-    "typecheck": "tsc -p shared && tsc -p extension && tsc -p server",
+    "typecheck": "tsc -p shared && tsc -p core && tsc -p host && tsc -p extension",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },

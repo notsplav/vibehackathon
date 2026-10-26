@@ -7,7 +7,7 @@ export default defineConfig({
         test: { name: "extension", include: ["extension/test/**/*.test.ts"], environment: "jsdom" },
       },
       {
-        test: { name: "server", include: ["server/test/**/*.test.ts"], environment: "node" },
+        test: { name: "core", include: ["core/test/**/*.test.ts", "host/test/**/*.test.ts"], environment: "node" },
       },
     ],
   },

@@ -1,7 +1,8 @@
-// Боковая панель: запуск анализа, прогресс, список утверждений, сводка и ошибки.
-// Прогресс хранится на сервере; панель запоминает только analysisId для URL вкладки и восстанавливается по нему.
+// Боковая панель: запуск проверки, прогресс, список утверждений, сводка и ошибки.
+// Проверку ведёт фоновый скрипт через помощника «Сверки»; панель читает состояние из chrome.storage.local
+// и обновляется по storage.onChanged — её можно закрыть и открыть снова, ничего не теряя.
 
-import type { AnalysisState, ArticleMetadata, Claim, ExtractedArticle, HealthResponse, SourcedValue } from "../../../shared/contract.ts";
+import type { AnalysisState, ArticleMetadata, Claim, ExtractedArticle, SourcedValue } from "../../../shared/contract.ts";
 import { LABELS, displayState } from "../labels.ts";
 import {
   CHECK_SELECTION,
@@ -10,45 +11,37 @@ import {
   PENDING_SELECTION_KEY,
   type PendingSelection,
   type RenderReply,
-  SETTINGS_CHANGED,
 } from "../messages.ts";
-import { ApiError, api } from "./api.ts";
+import { type BgReply, type BgRequest, type HostStatus, type PageEntry, analysisKey, pageKey } from "../state.ts";
 import { type IconName, icon } from "./icons.ts";
 import { liveStep, renderProgress, tick } from "./progress.ts";
 
-const POLL_MS = 1500;
 const TERMINAL = new Set(["completed", "cancelled", "failed"]);
-
-interface Saved {
-  analysisId: string;
-  fingerprint: string;
-}
 
 interface View {
   tabId: number | null;
   url: string | null;
-  saved: Saved | null;
+  saved: PageEntry | null;
   analysis: AnalysisState | null;
   metadata: ArticleMetadata | null;
   busy: string | null;
   error: string | null;
   notice: string | null;
   stale: boolean;
-  health: HealthResponse | null;
+  host: HostStatus | null;
 }
 
-const view: View = { tabId: null, url: null, saved: null, analysis: null, metadata: null, busy: null, error: null, notice: null, stale: false, health: null };
-let pollTimer: ReturnType<typeof setTimeout> | null = null;
-/** Время последнего успешного опроса сервера — показывается как «обновлено N с назад». */
-let lastPollAt: number | null = null;
+const view: View = { tabId: null, url: null, saved: null, analysis: null, metadata: null, busy: null, error: null, notice: null, stale: false, host: null };
 let generation = 0;
 
 const root = document.getElementById("app")!;
 
-// --- Связь с вкладкой ---
+// --- Связь с фоновым скриптом и вкладкой ---
 
-function storageKey(url: string): string {
-  return `analysis:${url.split("#")[0]}`;
+async function bg(req: BgRequest): Promise<BgReply & { ok: true }> {
+  const reply = (await chrome.runtime.sendMessage(req)) as BgReply | undefined;
+  if (!reply?.ok) throw new Error(reply && !reply.ok ? reply.error : "Фоновый скрипт расширения не ответил.");
+  return reply;
 }
 
 async function sendToTab<T>(msg: PanelMessage): Promise<T> {
@@ -86,51 +79,57 @@ const EXTRACTION_ERRORS: Record<string, string> = {
   low_confidence: "Не удалось надёжно определить основной текст статьи, поэтому он не отправлен на проверку.",
 };
 
+/** Статус помощника кэшируется на минуту: каждая проверка статуса запускает процесс помощника. */
+let statusCache: { at: number; status: HostStatus } | null = null;
+
+async function hostStatus(): Promise<HostStatus> {
+  if (statusCache && Date.now() - statusCache.at < 60_000) return statusCache.status;
+  const status = await bg({ type: "bg:status" }).then(
+    (r) => r.status ?? { ready: false, problem: "Нет ответа от фонового скрипта.", extractModel: null, checkModel: null },
+    (e) => ({ ready: false, problem: message(e), extractModel: null, checkModel: null }),
+  );
+  // Ошибку не кэшируем: пользователь мог только что установить помощника.
+  if (status.ready) statusCache = { at: Date.now(), status };
+  return status;
+}
+
+async function readAnalysis(id: string): Promise<AnalysisState | null> {
+  const key = analysisKey(id);
+  return ((await chrome.storage.local.get(key)) as Record<string, AnalysisState | undefined>)[key] ?? null;
+}
+
 // --- Действия ---
 
 async function init(): Promise<void> {
   const gen = ++generation;
-  stopPolling();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   Object.assign(view, { tabId: tab?.id ?? null, url: tab?.url ?? null, saved: null, analysis: null, metadata: null, busy: null, error: null, notice: null, stale: false });
   render();
-  api.health().then(
-    (health) => ((view.health = health), render()),
-    () => ((view.health = null), render()),
-  );
+  void hostStatus().then((status) => ((view.host = status), render()));
   if (!view.url) return;
-  const key = storageKey(view.url);
-  const saved = ((await chrome.storage.local.get(key)) as Record<string, Saved | undefined>)[key] ?? null;
+  const key = pageKey(view.url);
+  const saved = ((await chrome.storage.local.get(key)) as Record<string, PageEntry | undefined>)[key] ?? null;
   if (gen !== generation || !saved) return;
-  view.saved = saved;
-  try {
-    view.analysis = await api.get(saved.analysisId);
-    lastPollAt = Date.now();
-    view.metadata = view.analysis.metadata;
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 404) {
-      await chrome.storage.local.remove(key);
-      view.saved = null;
-    } else view.error = message(e);
-    render();
+  const analysis = await readAnalysis(saved.analysisId);
+  if (!analysis) {
+    await chrome.storage.local.remove(key);
     return;
   }
+  Object.assign(view, { saved, analysis, metadata: analysis.metadata });
   render();
-  // Восстанавливаем маркеры: извлечение локальное, на сервер ничего не отправляется.
+  // Восстанавливаем маркеры: извлечение локальное, никуда не отправляется.
   try {
-    const { fingerprint } = await extract();
+    const { fingerprint } = await extract(analysis.focus ? { selection: { hint: analysis.focus.text, onlyHint: true } } : {});
     if (fingerprint !== saved.fingerprint) view.stale = true;
     else await pushToPage();
   } catch {
     view.notice = "Маркеры на странице не восстановлены: нажмите на значок расширения на вкладке статьи.";
   }
   render();
-  if (view.analysis && !isDone(view.analysis)) schedulePoll(gen);
 }
 
-async function analyze(force: boolean, scope: Scope = {}): Promise<void> {
-  const gen = ++generation;
-  stopPolling();
+async function analyze(scope: Scope = {}): Promise<void> {
+  ++generation;
   Object.assign(view, { error: null, notice: null, stale: false, busy: scope.selection ? "Готовим выделенный фрагмент…" : "Извлекаем статью…" });
   render();
   try {
@@ -142,19 +141,12 @@ async function analyze(force: boolean, scope: Scope = {}): Promise<void> {
       render();
       return;
     }
-    view.busy = article.focus
-      ? `Фрагмент и контекст: блоков ${article.blocks.length}. Отправляем на проверку…`
-      : `Статья извлечена: блоков ${article.blocks.length}. Отправляем на проверку…`;
-    render();
-    const created = await api.create(article, force);
-    view.saved = { analysisId: created.analysisId, fingerprint };
-    await chrome.storage.local.set({ [storageKey(view.url ?? article.url)]: view.saved });
-    view.analysis = await api.get(created.analysisId);
-    lastPollAt = Date.now();
+    const { analysisId } = await bg({ type: "bg:start", url: view.url ?? article.url, article, fingerprint });
+    view.saved = { analysisId: analysisId!, fingerprint };
+    view.analysis = await readAnalysis(analysisId!);
     view.busy = null;
     await pushToPage();
     render();
-    if (!isDone(view.analysis)) schedulePoll(gen);
   } catch (e) {
     view.busy = null;
     view.error = message(e);
@@ -164,30 +156,21 @@ async function analyze(force: boolean, scope: Scope = {}): Promise<void> {
 
 async function cancel(): Promise<void> {
   if (!view.saved) return;
-  try {
-    view.analysis = await api.cancel(view.saved.analysisId);
-    await pushToPage();
-  } catch (e) {
-    view.error = message(e);
-  }
+  await bg({ type: "bg:cancel", analysisId: view.saved.analysisId }).catch((e) => (view.error = message(e)));
   render();
 }
 
 async function removeResult(): Promise<void> {
-  if (!view.saved) return;
-  stopPolling();
+  if (!view.saved || !view.url) return;
   try {
-    await api.remove(view.saved.analysisId);
+    await bg({ type: "bg:delete", analysisId: view.saved.analysisId, url: view.url });
   } catch (e) {
-    if (!(e instanceof ApiError && e.status === 404)) {
-      view.error = message(e);
-      render();
-      return;
-    }
+    view.error = message(e);
+    render();
+    return;
   }
-  if (view.url) await chrome.storage.local.remove(storageKey(view.url));
   await sendToTab({ type: "vh:clear" }).catch(() => undefined);
-  Object.assign(view, { saved: null, analysis: null, stale: false, notice: "Локальный результат удалён." });
+  Object.assign(view, { saved: null, analysis: null, stale: false, notice: "Результат удалён." });
   render();
 }
 
@@ -197,47 +180,17 @@ async function pushToPage(): Promise<void> {
   if (reply?.ok && reply.stale) view.stale = true;
 }
 
-/** После завершения проверок сводка появляется не сразу: ждём её ограниченное число опросов. */
-const SUMMARY_WAIT_POLLS = 20;
-let summaryWaits = 0;
-
-function isDone(a: AnalysisState): boolean {
-  if (!TERMINAL.has(a.status) || a.preliminary) {
-    summaryWaits = 0;
-    return false;
-  }
-  const expectSummary = a.status === "completed" && !a.error && a.summary === null && a.claims.some((c) => c.status === "checked");
-  return !expectSummary || ++summaryWaits > SUMMARY_WAIT_POLLS;
-}
-
-function schedulePoll(gen: number): void {
-  stopPolling();
-  pollTimer = setTimeout(async () => {
-    if (gen !== generation || !view.saved) return;
-    try {
-      const next = await api.get(view.saved.analysisId);
-      lastPollAt = Date.now();
-      // Живой прогресс меняется без updatedAt (шаги проверки хранятся только в памяти сервера).
-      const changed = next.updatedAt !== view.analysis?.updatedAt || JSON.stringify(next.live) !== JSON.stringify(view.analysis?.live);
-      view.analysis = next;
-      view.error = null;
-      if (changed) {
-        await pushToPage();
-        render();
-      }
-      if (!isDone(next)) schedulePoll(gen);
-    } catch (e) {
-      view.error = message(e);
-      render();
-      schedulePoll(gen);
-    }
-  }, POLL_MS);
-}
-
-function stopPolling(): void {
-  if (pollTimer) clearTimeout(pollTimer);
-  pollTimer = null;
-}
+// Каждое событие проверки фоновый скрипт пишет в storage — панель просто следит за своей записью.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !view.saved) return;
+  const change = changes[analysisKey(view.saved.analysisId)];
+  if (!change?.newValue) return;
+  const prev = view.analysis;
+  view.analysis = change.newValue as AnalysisState;
+  // Маркеры на странице меняются только при изменении утверждений, а не при каждом шаге поиска.
+  if (JSON.stringify(prev?.claims) !== JSON.stringify(view.analysis.claims)) void pushToPage();
+  render();
+});
 
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -308,11 +261,16 @@ function claimItem(c: Claim, a: AnalysisState): HTMLElement {
   return item;
 }
 
-/** Чем будет проверяться статья: модель и поиск, по ответу сервера. */
-function engineInfo(health: HealthResponse | null): HTMLElement {
+/** Чем будет проверяться статья: модели Claude Code по ответу помощника. */
+function engineInfo(host: HostStatus | null): HTMLElement {
   const info = h("dl", { cls: "engine" });
-  if (!health) return info;
-  info.append(h("dt", { text: "Модель:" }), h("dd", { text: health.model }), h("dt", { text: "Поиск:" }), h("dd", { text: health.search }));
+  if (!host?.ready) return info;
+  info.append(
+    h("dt", { text: "Утверждения:" }),
+    h("dd", { text: host.extractModel ?? "" }),
+    h("dt", { text: "Проверка:" }),
+    h("dd", { text: `${host.checkModel ?? ""} + WebSearch` }),
+  );
   return info;
 }
 
@@ -321,10 +279,10 @@ function startScreen(): HTMLElement {
   return h(
     "section",
     { cls: "start" },
-    button("Начать проверку", () => void analyze(false), "primary cta"),
-    button("Проверить выделенное", () => void analyze(false, { selection: { hint: null } }), "secondary"),
+    button("Начать проверку", () => void analyze(), "primary cta"),
+    button("Проверить выделенное", () => void analyze({ selection: { hint: null } }), "secondary"),
     h("p", { cls: "start-tip", text: "Или выделите текст и нажмите правой кнопкой → «Сверка: проверить выделенное»." }),
-    engineInfo(view.health),
+    engineInfo(view.host),
   );
 }
 
@@ -340,7 +298,7 @@ async function consumePendingSelection(): Promise<void> {
   const pending = stored[PENDING_SELECTION_KEY];
   if (!pending || pending.tabId !== view.tabId || Date.now() - pending.at > 60_000) return;
   await chrome.storage.session.remove(PENDING_SELECTION_KEY);
-  await analyze(false, { selection: { hint: pending.text || null } });
+  await analyze({ selection: { hint: pending.text || null } });
 }
 
 /** Удаление подтверждается вторым нажатием в течение нескольких секунд. */
@@ -362,7 +320,7 @@ function actionButtons(a: AnalysisState): HTMLElement {
   const bar = h("div", { cls: "head-actions" });
   if (!TERMINAL.has(a.status)) bar.append(iconButton("stop", "Остановить проверку", () => void cancel()));
   // Повтор проверяет тот же объём: всю статью или тот же выделенный фрагмент.
-  bar.append(iconButton("retry", "Проверить заново", () => void analyze(true, a.focus ? { selection: { hint: a.focus.text, onlyHint: true } } : {})));
+  bar.append(iconButton("retry", "Проверить заново", () => void analyze(a.focus ? { selection: { hint: a.focus.text, onlyHint: true } } : {})));
   const armed = Date.now() < deleteArmedUntil;
   bar.append(
     iconButton(
@@ -387,7 +345,7 @@ function actionButtons(a: AnalysisState): HTMLElement {
 function render(): void {
   const a = view.analysis;
   const children: (Node | null)[] = [];
-  if (view.health?.problem) children.push(h("p", { cls: "warning", text: view.health.problem }));
+  if (view.host?.problem) children.push(h("p", { cls: "warning", text: view.host.problem }));
   if (view.metadata) children.push(metadataSection(view.metadata));
 
   const idle = !a && !view.busy;
@@ -400,7 +358,7 @@ function render(): void {
 
   if (a) {
     if (a.focus) children.push(focusBox(a.focus.text));
-    children.push(renderProgress(a, lastPollAt, actionButtons(a)));
+    children.push(renderProgress(a, null, actionButtons(a)));
     const facts = a.claims.filter((c) => c.status !== "opinion");
     const opinions = a.claims.filter((c) => c.status === "opinion");
     if (facts.length) children.push(h("h3", { text: "Утверждения" }), h("ul", { cls: "claims" }, ...facts.map((c) => claimItem(c, a))));
@@ -409,24 +367,11 @@ function render(): void {
   root.replaceChildren(...children.filter((c): c is Node => c !== null));
 }
 
-// Шестерёнка в шапке открывает нативную страницу настроек расширения.
-const settingsButton = document.getElementById("open-settings");
-if (settingsButton) {
-  settingsButton.append(icon(document, "settings"));
-  settingsButton.addEventListener("click", () => void chrome.runtime.openOptionsPage());
-}
-// После сохранения настроек обновляем подпись «Модель / Поиск» и предупреждения.
 chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
   if (msg?.type === CHECK_SELECTION) void consumePendingSelection();
-  if (msg?.type === SETTINGS_CHANGED) {
-    api.health().then(
-      (health) => ((view.health = health), render()),
-      () => undefined,
-    );
-  }
 });
 
-// Таймеры и «обновлено N с назад» меняются каждую секунду без перерисовки всей панели.
+// Таймеры меняются каждую секунду без перерисовки всей панели.
 setInterval(() => tick(root), 1000);
 
 chrome.tabs.onActivated.addListener(() => void init());
