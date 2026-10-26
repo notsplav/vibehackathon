@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Block } from "../../shared/contract.ts";
-import { chunkBlocks, mergeDuplicates, restrictToFocus, validateClaims } from "../claims.ts";
+import { chunkBlocks, mergeDuplicates, restrictToFocus, sentencesAround, validateClaims } from "../claims.ts";
 import { checkInput } from "../prompts.ts";
 
 const blocks: Block[] = [
@@ -148,4 +148,11 @@ test("проверке передаётся точный текст статьи
   );
   expect(input.statement).toBe("На улице его протаранил автомобиль");
   expect(input.claim).toBe("На улице Натана Вейла его протаранил автомобиль");
+});
+
+test("на проверку идёт предложение с утверждением, а не весь абзац", () => {
+  const paragraph = "Андреа Кими Антонелли выиграл Гран-при США. В Кубке конструкторов «Мерседес» лидирует с 607 очками, у «Феррари» 474. Следующий этап пройдёт в Мексике.";
+  expect(sentencesAround(paragraph, "«Мерседес» лидирует с 607 очками")).toBe("В Кубке конструкторов «Мерседес» лидирует с 607 очками, у «Феррари» 474.");
+  // Фрагмент через границу предложений — весь блок.
+  expect(sentencesAround(paragraph, "Гран-при США. В Кубке конструкторов")).toBe(paragraph);
 });
