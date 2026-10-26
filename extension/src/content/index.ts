@@ -6,6 +6,7 @@ import { textFingerprint } from "../extract/blocks.ts";
 import { extractArticle } from "../extract/index.ts";
 import { visibleText } from "../extract/text.ts";
 import type { ExtractReply, PanelMessage, RenderReply } from "../messages.ts";
+import { ext } from "../platform.ts";
 import { type BlockInfo, closeCard, openCard } from "./card.ts";
 import { STATUS_ATTR, applyMarkers, claimsByBlock, clearMarkers } from "./markers.ts";
 import { selectionArticle } from "./selection.ts";
@@ -106,7 +107,7 @@ function install(win: WindowWithState): void {
   const flagged = win as WindowWithState & { __vhInstalled?: boolean };
   if (flagged.__vhInstalled) return;
   flagged.__vhInstalled = true;
-  chrome.runtime.onMessage.addListener((msg: PanelMessage, _sender, sendResponse) => {
+  ext.runtime.onMessage.addListener((msg: PanelMessage, _sender, sendResponse) => {
     try {
       sendResponse(handleMessage(win, msg));
     } catch (e) {

@@ -36,7 +36,7 @@
 
 ## Согласованные решения
 
-- MVP: русскоязычные текстовые статьи и новости, Chrome Manifest V3; помощник Native Messaging на Node.js/TypeScript, который вызывает Claude Code (haiku — выделение утверждений, sonnet + WebSearch — проверка). Firefox — следующим этапом.
+- MVP: русскоязычные текстовые статьи и новости, Manifest V3 для Chrome и Firefox из общего кода; помощник Native Messaging на Node.js/TypeScript, который вызывает Claude Code (haiku — выделение утверждений, sonnet + WebSearch — проверка). Различия браузеров — только в `extension/src/platform.ts` и `extension/scripts/manifest.ts`.
 - Анализировать всю извлечённую статью. Выделять все обнаруженные проверяемые утверждения и проверять их постепенно. Не вводить скрытый лимит на число claims; при прерывании показывать число `not_checked`.
 - Извлечение статьи, блоков, даты и автора выполняется детерминированно в расширении. Claude применяется после этого для выделения атомарных claims и поиска свидетельств.
 - Блок UI — видимый абзац, пункт списка, цитата или заголовок. Claim — отдельное утверждение внутри блока. Один блок может содержать несколько claims; один claim может встречаться в нескольких блоках.
@@ -70,8 +70,8 @@
 Требуется Node.js 24+. Зависимости ставятся с точной версией (`.npmrc`: `save-exact=true`).
 
 - `npm install` — установить зависимости всех пакетов (`extension`, `host`).
-- `npm run install:host` — зарегистрировать помощника в Chrome (обёртка `host/bin/sverka-host` и манифест в `NativeMessagingHosts`); `npm run install:host -- --uninstall` — удалить.
-- `npm run build:extension` — собрать расширение в `extension/dist` (загружать через «Загрузить распакованное расширение»).
+- `npm run install:host` — зарегистрировать помощника в Chrome и Firefox (обёртка `host/bin/sverka-host` и манифесты в `NativeMessagingHosts`); `npm run install:host -- --uninstall` — удалить.
+- `npm run build:extension` — собрать расширение: `extension/dist` для Chrome («Загрузить распакованное расширение»), `extension/dist-firefox` для Firefox (`about:debugging` → «Загрузить временное дополнение»).
 - `npm run typecheck` — проверка типов `shared`, `core`, `host`, `extension`.
 - `npm test` — все тесты Vitest (`extension/test` в jsdom, `core/test` и `host/test` в Node). Тесты не вызывают настоящий Claude.
 - `UPDATE_EXPECTED=1 npm test` — перезаписать `fixtures/expected/` фактическим результатом извлечения (только после намеренного изменения алгоритма, дифф проверять вручную). Подробнее — `fixtures/README.md`.

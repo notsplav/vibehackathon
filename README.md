@@ -1,6 +1,6 @@
 # Сверка
 
-Chrome-расширение для проверки утверждений в статьях. Расширение извлекает статью со страницы, а маленький помощник на компьютере проверяет утверждения через Claude Code: выделяет их быстрой моделью (haiku) и проверяет каждое с поиском в интернете (sonnet + WebSearch), параллельно. Результаты отмечаются прямо в тексте статьи.
+Расширение для Chrome и Firefox для проверки утверждений в статьях. Расширение извлекает статью со страницы, а маленький помощник на компьютере проверяет утверждения через Claude Code: выделяет их быстрой моделью (haiku) и проверяет каждое с поиском в интернете (sonnet + WebSearch), параллельно. Результаты отмечаются прямо в тексте статьи.
 
 Техническое задание: [`tech.md`](tech.md). Принятые решения и отступления от ТЗ: [`docs/decisions.md`](docs/decisions.md). Правила работы в репозитории: [`CLAUDE.md`](CLAUDE.md).
 
@@ -17,17 +17,21 @@ Chrome-расширение для проверки утверждений в с
 
 ## Быстрый старт
 
-Нужны Node.js 24+, Chrome 116+ и [Claude Code](https://docs.claude.com/en/docs/claude-code) с выполненным входом (`claude` → `/login`).
+Нужны Node.js 24+, Chrome 116+ или Firefox 128+ и [Claude Code](https://docs.claude.com/en/docs/claude-code) с выполненным входом (`claude` → `/login`).
 
 ```sh
 npm install
-npm run install:host      # регистрирует помощника в Chrome (обёртка в host/bin, манифест в NativeMessagingHosts)
-npm run build:extension   # сборка в extension/dist
+npm run install:host      # регистрирует помощника в Chrome и Firefox (обёртка в host/bin, манифесты в NativeMessagingHosts)
+npm run build:extension   # сборка: extension/dist — Chrome, extension/dist-firefox — Firefox
 ```
 
-В Chrome откройте `chrome://extensions`, включите режим разработчика, нажмите «Загрузить распакованное расширение» и выберите `extension/dist`. Затем откройте статью, нажмите на значок «Сверки» и «Начать проверку».
+**Chrome:** откройте `chrome://extensions`, включите режим разработчика, нажмите «Загрузить распакованное расширение» и выберите `extension/dist`.
 
-ID расширения постоянный (`gpmhmgppcnmhmkiiaefegfiboaoagiao`): в manifest задан публичный ключ, и помощник принимает сообщения только от этого ID.
+**Firefox:** откройте `about:debugging#/runtime/this-firefox`, нажмите «Загрузить временное дополнение…» и выберите `extension/dist-firefox/manifest.json`. Временное дополнение пропадает после перезапуска Firefox; постоянная установка неподписанного расширения возможна только в Firefox Developer Edition или Nightly (`xpinstall.signatures.required = false`) либо после подписи на addons.mozilla.org.
+
+Затем откройте статью, нажмите на значок «Сверки» и «Начать проверку». В Firefox панель открывается в боковой панели браузера.
+
+ID расширения постоянный — в Chrome `gpmhmgppcnmhmkiiaefegfiboaoagiao` (публичный ключ в manifest), в Firefox `sverka@vibehackathon`; помощник принимает сообщения только от этих ID.
 
 Удалить помощника: `npm run install:host -- --uninstall`.
 

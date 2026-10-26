@@ -1,34 +1,35 @@
 // Фоновый скрипт: открывает панель, держит соединение с помощником «Сверки» (Native Messaging)
-// и записывает каждое событие проверки в chrome.storage.local. Пока соединение открыто, Chrome не
+// и записывает каждое событие проверки в storage.local. Пока соединение открыто, браузер не
 // выгружает фоновый скрипт; после всех проверок соединение закрывается и помощник завершается.
 
 import type { AnalysisState } from "../../shared/contract.ts";
 import { HOST_NAME, type HostEvent, type HostRequest } from "../../shared/host.ts";
 import { CHECK_SELECTION, PENDING_SELECTION_KEY, type PendingSelection } from "./messages.ts";
+import { configurePanel, ext, openPanel } from "./platform.ts";
 import { type BgReply, type BgRequest, type HostStatus, type PageEntry, analysisKey, newAnalysis, pageKey, withClaims } from "./state.ts";
 
 const MENU_ID = "vh-check-selection";
 const NOT_INSTALLED = "Помощник «Сверки» не установлен. В папке проекта выполните npm run install:host и перезагрузите расширение.";
 
-chrome.runtime.onInstalled.addListener(() => {
-  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
-  chrome.contextMenus.create({ id: MENU_ID, title: "Сверка: проверить выделенное", contexts: ["selection"] });
+ext.runtime.onInstalled.addListener(() => {
+  configurePanel();
+  ext.contextMenus.create({ id: MENU_ID, title: "Сверка: проверить выделенное", contexts: ["selection"] });
 });
 
-chrome.action.onClicked.addListener((tab) => {
-  // Вызов в обработчике клика: Chrome требует жест пользователя; заодно выдаётся activeTab.
-  if (tab.windowId !== undefined) void chrome.sidePanel.open({ windowId: tab.windowId });
+ext.action.onClicked.addListener((tab) => {
+  // Вызов в обработчике клика: браузер требует действие пользователя; заодно выдаётся activeTab.
+  openPanel(tab.windowId);
 });
 
-chrome.contextMenus.onClicked.addListener((info, tab) => {
+ext.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId !== MENU_ID || tab?.id === undefined || tab.windowId === undefined) return;
   // Панель открывается сразу (нужен жест пользователя), а запрос на проверку оставляем ей в session storage:
   // открытая панель получит сообщение, только что открытая — заберёт запрос при запуске.
-  void chrome.sidePanel.open({ windowId: tab.windowId });
+  openPanel(tab.windowId);
   const pending: PendingSelection = { tabId: tab.id, text: info.selectionText ?? "", at: Date.now() };
-  void chrome.storage.session
+  void ext.storage.session
     .set({ [PENDING_SELECTION_KEY]: pending })
-    .then(() => chrome.runtime.sendMessage({ type: CHECK_SELECTION }))
+    .then(() => ext.runtime.sendMessage({ type: CHECK_SELECTION }))
     .catch(() => undefined);
 });
 
@@ -41,18 +42,24 @@ let writes: Promise<unknown> = Promise.resolve();
 
 function hostMessage(error: string | undefined): string {
   if (!error) return "Помощник «Сверки» завершился неожиданно.";
-  if (/not found|not installed|forbidden/i.test(error)) return NOT_INSTALLED;
+  // Chrome: «Specified native messaging host not found», Firefox: «No such native application …».
+  if (/not found|not installed|forbidden|no such native application/i.test(error)) return NOT_INSTALLED;
   return `Помощник «Сверки» недоступен: ${error}`;
+}
+
+/** Причина отключения: в Chrome — runtime.lastError, в Firefox — port.error. */
+function disconnectReason(p: chrome.runtime.Port): string | undefined {
+  return (p as chrome.runtime.Port & { error?: { message?: string } }).error?.message ?? ext.runtime.lastError?.message;
 }
 
 function ensurePort(): chrome.runtime.Port {
   if (port) return port;
-  const p = chrome.runtime.connectNative(HOST_NAME);
+  const p = ext.runtime.connectNative(HOST_NAME);
   p.onMessage.addListener((msg: HostEvent) => {
     if (msg.type !== "pong") apply(msg);
   });
   p.onDisconnect.addListener(() => {
-    const reason = hostMessage(chrome.runtime.lastError?.message);
+    const reason = hostMessage(disconnectReason(p));
     port = null;
     for (const id of [...active]) void update(id, (s) => fail(s, reason));
     active.clear();
@@ -82,8 +89,8 @@ function update(id: string, change: (s: AnalysisState) => AnalysisState): Promis
   writes = writes
     .then(async () => {
       const key = analysisKey(id);
-      const s = ((await chrome.storage.local.get(key)) as Record<string, AnalysisState | undefined>)[key];
-      if (s) await chrome.storage.local.set({ [key]: change(s) });
+      const s = ((await ext.storage.local.get(key)) as Record<string, AnalysisState | undefined>)[key];
+      if (s) await ext.storage.local.set({ [key]: change(s) });
     })
     // Одна неудачная запись не должна останавливать все следующие события.
     .catch((e: unknown) => console.warn("Сверка: не удалось сохранить событие проверки", e));
@@ -120,7 +127,7 @@ function status(): Promise<HostStatus> {
   return new Promise((resolve) => {
     let p: chrome.runtime.Port;
     try {
-      p = chrome.runtime.connectNative(HOST_NAME);
+      p = ext.runtime.connectNative(HOST_NAME);
     } catch {
       resolve({ ready: false, problem: NOT_INSTALLED, extractModel: null, checkModel: null });
       return;
@@ -139,7 +146,7 @@ function status(): Promise<HostStatus> {
     });
     p.onDisconnect.addListener(() => {
       clearTimeout(timer);
-      resolve({ ready: false, problem: hostMessage(chrome.runtime.lastError?.message), extractModel: null, checkModel: null });
+      resolve({ ready: false, problem: hostMessage(disconnectReason(p)), extractModel: null, checkModel: null });
     });
     p.postMessage({ type: "ping" } satisfies HostRequest);
   });
@@ -154,7 +161,7 @@ async function handle(req: BgRequest): Promise<BgReply> {
       const id = crypto.randomUUID();
       const page: PageEntry = { analysisId: id, fingerprint: req.fingerprint };
       active.add(id);
-      await chrome.storage.local.set({ [analysisKey(id)]: newAnalysis(id, req.article), [pageKey(req.url)]: page });
+      await ext.storage.local.set({ [analysisKey(id)]: newAnalysis(id, req.article), [pageKey(req.url)]: page });
       try {
         post({ type: "analyze", id, article: req.article });
       } catch (e) {
@@ -169,13 +176,13 @@ async function handle(req: BgRequest): Promise<BgReply> {
     case "bg:delete":
       if (active.has(req.analysisId) && port) port.postMessage({ type: "cancel", id: req.analysisId } satisfies HostRequest);
       active.delete(req.analysisId);
-      await chrome.storage.local.remove([analysisKey(req.analysisId), pageKey(req.url)]);
+      await ext.storage.local.remove([analysisKey(req.analysisId), pageKey(req.url)]);
       releaseIfIdle();
       return { ok: true };
   }
 }
 
-chrome.runtime.onMessage.addListener((req: BgRequest, _sender, sendResponse) => {
+ext.runtime.onMessage.addListener((req: BgRequest, _sender, sendResponse) => {
   if (typeof req?.type !== "string" || !req.type.startsWith("bg:")) return false;
   handle(req).then(sendResponse, (e: unknown) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
   return true;
@@ -187,25 +194,25 @@ chrome.runtime.onMessage.addListener((req: BgRequest, _sender, sendResponse) => 
 const KEEP_ANALYSES = 30;
 
 const recovered = (async () => {
-  const all = (await chrome.storage.local.get(null)) as Record<string, unknown>;
+  const all = (await ext.storage.local.get(null)) as Record<string, unknown>;
   const analyses = Object.entries(all)
     .filter(([key, value]) => key.startsWith("analysis:") && !key.startsWith("analysis:http") && typeof (value as AnalysisState)?.createdAt === "string")
     .sort(([, a], [, b]) => ((b as AnalysisState).createdAt > (a as AnalysisState).createdAt ? 1 : -1));
   const stale = new Set(analyses.slice(KEEP_ANALYSES).map(([key]) => key));
   if (stale.size) {
     const pages = Object.entries(all).filter(([key, v]) => key.startsWith("page:") && stale.has(analysisKey((v as PageEntry).analysisId))).map(([key]) => key);
-    await chrome.storage.local.remove([...stale, ...pages]);
+    await ext.storage.local.remove([...stale, ...pages]);
     for (const key of stale) delete all[key];
   }
   for (const [key, value] of Object.entries(all)) {
     // Записи старой версии с сервером («analysis:<url>») больше не нужны.
     if (key.startsWith("analysis:http")) {
-      await chrome.storage.local.remove(key);
+      await ext.storage.local.remove(key);
       continue;
     }
     const s = value as AnalysisState;
     if (key.startsWith("analysis:") && !active.has(s.analysisId) && ["queued", "extracting_claims", "checking"].includes(s.status)) {
-      await chrome.storage.local.set({ [key]: fail(s, "Проверка прервалась: браузер остановил фоновый процесс. Нажмите ↻, чтобы проверить заново.") });
+      await ext.storage.local.set({ [key]: fail(s, "Проверка прервалась: браузер остановил фоновый процесс. Нажмите ↻, чтобы проверить заново.") });
     }
   }
 })();

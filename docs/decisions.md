@@ -17,6 +17,29 @@
 
 ## Решения
 
+### 2026-10-26 — Версия для Firefox из общего кода
+
+- **Что изменено:**
+  - **Сборка.** `npm run build:extension` собирает два варианта: `extension/dist` (Chrome) и `extension/dist-firefox` (Firefox 128+). Манифест Firefox получается из манифеста Chrome функцией `firefoxManifest` (`extension/scripts/manifest.ts`):
+    - фон — `background.scripts` (event page) вместо service worker;
+    - `sidebar_action` вместо `side_panel`;
+    - `browser_specific_settings.gecko.id = sverka@vibehackathon`;
+    - без `key`, `minimum_chrome_version` и разрешения `sidePanel`.
+  - **Различия API** собраны в `extension/src/platform.ts`:
+    - `browser` или `chrome`;
+    - открытие панели: `sidebarAction.open()` или `sidePanel.open()`;
+    - настройка панели только в Chrome.
+
+    Причина отключения порта читается из `port.error` (Firefox) или `runtime.lastError` (Chrome). Текст «No such native application» распознаётся как «помощник не установлен».
+  - **Помощник** регистрируется в обоих браузерах (`npm run install:host`). Для Firefox — манифест в `~/Library/Application Support/Mozilla/NativeMessagingHosts/` с `allowed_extensions: ["sverka@vibehackathon"]`.
+- **Почему:** запрос владельца. Код и логика общие; отличаются только ключи манифеста и вызовы, специфичные для браузера.
+- **Риски и проверки:**
+  - **Фон в Firefox** выгружается при простое. По тестам самого Firefox открытый порт Native Messaging этому мешает (`test_ext_native_messaging_geckoview.js`), видимая боковая панель — тоже (MDN, Background scripts). Если проверку всё же прервёт выгрузка, она будет помечена прерванной, как в Chrome.
+  - **Неподписанное расширение** в обычном Firefox устанавливается только как временное, до перезапуска браузера.
+  - **Подсветка фрагмента** (CSS Custom Highlight API) включается только там, где браузер её поддерживает. Без неё карточка работает.
+- **Кто принял решение:** владелец репозитория.
+- **Затронутые контракты:** манифест помощника (добавлен Firefox, `allowed_extensions`), ID расширения в Firefox.
+
 ### 2026-10-26 — Проверка через Claude Code и помощника Native Messaging вместо сервера
 
 - **Что изменено:**
