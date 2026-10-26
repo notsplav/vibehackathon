@@ -216,3 +216,16 @@ export function restrictToFocus(claims: DraftClaim[], focus: ArticleFocus): Draf
   }
   return out;
 }
+
+/**
+ * Предложения блока, в которых стоит фрагмент утверждения. Для проверки этого достаточно: формулировка
+ * утверждения уже самодостаточна, а весь абзац тянет в поисковые запросы соседние факты.
+ */
+export function sentencesAround(blockText: string, exactText: string): string {
+  // Конец предложения — точка, «!», «?» или многоточие (возможно, с закрывающей кавычкой), дальше заглавная буква.
+  const sentences = blockText.split(/(?<=[.!?…][»"]?)\s+(?=[«"A-ZА-ЯЁ0-9])/u);
+  const needle = foldChars(normalizeSpace(exactText)).slice(0, 40);
+  const hits = sentences.filter((s) => foldChars(normalizeSpace(s)).includes(needle));
+  // Фрагмент может перешагивать границу предложения — тогда берём весь блок.
+  return hits.length ? hits.join(" ") : blockText;
+}

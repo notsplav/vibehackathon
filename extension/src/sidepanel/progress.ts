@@ -171,7 +171,7 @@ export function renderProgress(a: AnalysisState, lastPollAt: number | null, acti
     now.append(title);
     for (const item of activity.items) {
       const row = h("div", "now-item");
-      row.append(h("div", "now-claim", `«${item.text}»`));
+      row.append(h("div", "now-claim", item.text));
       const step = h("div", "now-step");
       step.append(h("span", undefined, `${item.step} · `), timer(item.since));
       row.append(step);

@@ -57,7 +57,7 @@ test("панель показывает текущее действие, зап�
     live: { extraction: null, checking: [{ claimId: "c3", step: "search", since: new Date(Date.now() - 5000).toISOString(), queries: ["Кюри 1867"] }] },
   });
   const el = renderProgress(a, Date.now());
-  expect(el.querySelector(".now")!.textContent).toContain("«Утверждение c3»");
+  expect(el.querySelector(".now-claim")!.textContent).toBe("Утверждение c3");
   expect(el.querySelector(".now")!.textContent).toContain("ищем источники");
   expect(el.querySelector(".now-queries")!.textContent).toBe("Запросы: «Кюри 1867»");
   expect(el.querySelectorAll(".spinner").length).toBeGreaterThan(0);

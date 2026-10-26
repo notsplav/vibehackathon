@@ -6,7 +6,7 @@ import type { ArticleFocus, Claim, ClaimStatus, ExtractedArticle, LiveProgress }
 import type { HostEvent } from "../../shared/host.ts";
 
 export type { HostEvent };
-import { checkableBlocks, mergeDuplicates, restrictToFocus, validateClaims, type RawClaim } from "../../core/claims.ts";
+import { checkableBlocks, mergeDuplicates, restrictToFocus, sentencesAround, validateClaims, type RawClaim } from "../../core/claims.ts";
 import { type Citation, decideVerdict } from "../../core/evidence.ts";
 import { CHECK_RETRY_PREFIX, CHECK_SCHEMA, CHECK_SYSTEM, EXTRACT_SCHEMA, EXTRACT_SYSTEM, SUMMARY_SYSTEM, checkInput, extractInput, extractSystem } from "../../core/prompts.ts";
 import { computeStats } from "../../core/stats.ts";
@@ -153,7 +153,8 @@ export async function analyze(
       update({ ...claim, status: "checking" });
       emit({ type: "live", id, live });
       try {
-        const input = checkInput(claim, [...new Set(claim.occurrences.map((o) => blockText.get(o.blockId) ?? o.exactText))], meta);
+        const context = [...new Set(claim.occurrences.map((o) => sentencesAround(blockText.get(o.blockId) ?? o.exactText, o.exactText)))];
+        const input = checkInput(claim, context, meta);
         const check = (prompt: string) =>
           run({
             bin: options.claudeBin,
