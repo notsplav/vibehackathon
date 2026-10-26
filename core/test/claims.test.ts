@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { Block } from "../../shared/contract.ts";
 import { chunkBlocks, mergeDuplicates, restrictToFocus, validateClaims } from "../claims.ts";
+import { checkInput } from "../prompts.ts";
 
 const blocks: Block[] = [
   { id: "b1", type: "title", order: 1, text: "Путин сделал заявление о беспорядках в ЕС", links: [] },
@@ -135,4 +136,16 @@ describe("проверка выделенного фрагмента", () => {
     );
     expect(kept.map((c) => c.occurrences[0]!.blockId + ":" + c.occurrences[0]!.exactText.slice(0, 20))).toEqual(["b3:Президента России Вл"]);
   });
+});
+
+test("проверке передаётся точный текст статьи, а не только пересказ модели", () => {
+  const input = JSON.parse(
+    checkInput(
+      { normalizedClaim: "На улице Натана Вейла его протаранил автомобиль", kind: "event", occurrences: [{ exactText: "На улице его протаранил автомобиль" }] },
+      ["Тенор ехал на велосипеде. На улице его протаранил автомобиль."],
+      { title: "Т", publishedAt: null, url: "https://news.example.test/a" },
+    ),
+  );
+  expect(input.statement).toBe("На улице его протаранил автомобиль");
+  expect(input.claim).toBe("На улице Натана Вейла его протаранил автомобиль");
 });
