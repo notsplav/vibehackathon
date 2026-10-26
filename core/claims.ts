@@ -42,8 +42,6 @@ export interface RawClaim {
   normalizedClaim?: unknown;
   kind?: unknown;
   isOpinion?: unknown;
-  /** Поисковые запросы, составленные вместе с утверждением (провайдер Ollama). */
-  searchQueries?: unknown;
 }
 
 export interface DraftClaim {
@@ -51,22 +49,6 @@ export interface DraftClaim {
   kind: ClaimKind;
   isOpinion: boolean;
   occurrences: ClaimOccurrence[];
-  searchQueries: string[];
-}
-
-const MAX_SEARCH_QUERIES = 5;
-
-/** Только непустые строки разумной длины, без повторов. */
-export function cleanQueries(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  const out: string[] = [];
-  for (const q of raw) {
-    if (typeof q !== "string") continue;
-    const v = normalizeSpace(q).slice(0, 300);
-    if (v.length > 2 && !out.some((x) => x.toLowerCase() === v.toLowerCase())) out.push(v);
-    if (out.length >= MAX_SEARCH_QUERIES) break;
-  }
-  return out;
 }
 
 export interface ValidationReport {
@@ -133,7 +115,6 @@ export function validateClaims(raw: RawClaim[], blocks: Block[]): ValidationRepo
       kind: KINDS.includes(r.kind as ClaimKind) ? (r.kind as ClaimKind) : "other",
       isOpinion: r.isOpinion === true,
       occurrences: relevantOccurrences(normalizedClaim, uniqueOccurrences(occurrences), report),
-      searchQueries: r.isOpinion === true ? [] : cleanQueries(r.searchQueries),
     });
   }
   return report;
@@ -182,10 +163,9 @@ export function mergeDuplicates(claims: DraftClaim[], blocks: Block[]): DraftCla
     );
     if (same) {
       same.occurrences = uniqueOccurrences([...same.occurrences, ...c.occurrences]);
-      same.searchQueries = cleanQueries([...same.searchQueries, ...c.searchQueries]);
       same.isOpinion = same.isOpinion && c.isOpinion;
     } else {
-      merged.push({ ...c, occurrences: [...c.occurrences], searchQueries: [...c.searchQueries] });
+      merged.push({ ...c, occurrences: [...c.occurrences] });
     }
   }
   // Порядок чтения: по первому вхождению.
