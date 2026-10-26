@@ -1,5 +1,5 @@
 // Боковая панель: запуск проверки, прогресс, список утверждений, сводка и ошибки.
-// Проверку ведёт фоновый скрипт через помощника «Сверки»; панель читает состояние из chrome.storage.local
+// Проверку ведёт фоновый скрипт через помощника «Сверки»; панель читает состояние из storage.local
 // и обновляется по storage.onChanged — её можно закрыть и открыть снова, ничего не теряя.
 
 import type { AnalysisState, ArticleMetadata, Claim, ExtractedArticle, SourcedValue } from "../../../shared/contract.ts";
@@ -12,6 +12,7 @@ import {
   type PendingSelection,
   type RenderReply,
 } from "../messages.ts";
+import { ext } from "../platform.ts";
 import { type BgReply, type BgRequest, type HostStatus, type PageEntry, analysisKey, pageKey } from "../state.ts";
 import { type IconName, icon } from "./icons.ts";
 import { liveStep, renderProgress, tick } from "./progress.ts";
@@ -39,20 +40,20 @@ const root = document.getElementById("app")!;
 // --- Связь с фоновым скриптом и вкладкой ---
 
 async function bg(req: BgRequest): Promise<BgReply & { ok: true }> {
-  const reply = (await chrome.runtime.sendMessage(req)) as BgReply | undefined;
+  const reply = (await ext.runtime.sendMessage(req)) as BgReply | undefined;
   if (!reply?.ok) throw new Error(reply && !reply.ok ? reply.error : "Фоновый скрипт расширения не ответил.");
   return reply;
 }
 
 async function sendToTab<T>(msg: PanelMessage): Promise<T> {
   if (view.tabId === null) throw new Error("Нет активной вкладки");
-  return (await chrome.tabs.sendMessage(view.tabId, msg)) as T;
+  return (await ext.tabs.sendMessage(view.tabId, msg)) as T;
 }
 
 async function inject(): Promise<void> {
   if (view.tabId === null) throw new Error("Нет активной вкладки");
   try {
-    await chrome.scripting.executeScript({ target: { tabId: view.tabId }, files: ["content.js"] });
+    await ext.scripting.executeScript({ target: { tabId: view.tabId }, files: ["content.js"] });
   } catch {
     throw new Error("Нет доступа к странице. Откройте статью и нажмите на значок расширения на её вкладке.");
   }
@@ -95,24 +96,24 @@ async function hostStatus(): Promise<HostStatus> {
 
 async function readAnalysis(id: string): Promise<AnalysisState | null> {
   const key = analysisKey(id);
-  return ((await chrome.storage.local.get(key)) as Record<string, AnalysisState | undefined>)[key] ?? null;
+  return ((await ext.storage.local.get(key)) as Record<string, AnalysisState | undefined>)[key] ?? null;
 }
 
 // --- Действия ---
 
 async function init(): Promise<void> {
   const gen = ++generation;
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
   Object.assign(view, { tabId: tab?.id ?? null, url: tab?.url ?? null, saved: null, analysis: null, metadata: null, busy: null, error: null, notice: null, stale: false });
   render();
   void hostStatus().then((status) => ((view.host = status), render()));
   if (!view.url) return;
   const key = pageKey(view.url);
-  const saved = ((await chrome.storage.local.get(key)) as Record<string, PageEntry | undefined>)[key] ?? null;
+  const saved = ((await ext.storage.local.get(key)) as Record<string, PageEntry | undefined>)[key] ?? null;
   if (gen !== generation || !saved) return;
   const analysis = await readAnalysis(saved.analysisId);
   if (!analysis) {
-    await chrome.storage.local.remove(key);
+    await ext.storage.local.remove(key);
     return;
   }
   Object.assign(view, { saved, analysis, metadata: analysis.metadata });
@@ -181,7 +182,7 @@ async function pushToPage(): Promise<void> {
 }
 
 // Каждое событие проверки фоновый скрипт пишет в storage — панель просто следит за своей записью.
-chrome.storage.onChanged.addListener((changes, area) => {
+ext.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !view.saved) return;
   const change = changes[analysisKey(view.saved.analysisId)];
   if (!change?.newValue) return;
@@ -294,10 +295,10 @@ function focusBox(text: string): HTMLElement {
 
 /** Проверка из контекстного меню: фоновый скрипт оставляет запрос, панель забирает его один раз. */
 async function consumePendingSelection(): Promise<void> {
-  const stored = (await chrome.storage.session.get(PENDING_SELECTION_KEY)) as Record<string, PendingSelection | undefined>;
+  const stored = (await ext.storage.session.get(PENDING_SELECTION_KEY)) as Record<string, PendingSelection | undefined>;
   const pending = stored[PENDING_SELECTION_KEY];
   if (!pending || pending.tabId !== view.tabId || Date.now() - pending.at > 60_000) return;
-  await chrome.storage.session.remove(PENDING_SELECTION_KEY);
+  await ext.storage.session.remove(PENDING_SELECTION_KEY);
   await analyze({ selection: { hint: pending.text || null } });
 }
 
@@ -367,15 +368,15 @@ function render(): void {
   root.replaceChildren(...children.filter((c): c is Node => c !== null));
 }
 
-chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
+ext.runtime.onMessage.addListener((msg: { type?: string }) => {
   if (msg?.type === CHECK_SELECTION) void consumePendingSelection();
 });
 
 // Таймеры меняются каждую секунду без перерисовки всей панели.
 setInterval(() => tick(root), 1000);
 
-chrome.tabs.onActivated.addListener(() => void init());
-chrome.tabs.onUpdated.addListener((tabId, info) => {
+ext.tabs.onActivated.addListener(() => void init());
+ext.tabs.onUpdated.addListener((tabId, info) => {
   if (tabId === view.tabId && (info.url || info.status === "complete")) void init();
 });
 // Панель могла открыться из контекстного меню — тогда сразу проверяем выделение.
