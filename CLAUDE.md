@@ -67,12 +67,8 @@
 
 Актуальные команды — в `package.json`. Если добавляешь или меняешь скрипт (помощник, сборка расширения, тесты), обнови этот раздел.
 
-Требуется Node.js 24+. Зависимости ставятся с точной версией (`.npmrc`: `save-exact=true`).
-
-- `npm install` — установить зависимости всех пакетов (`extension`, `host`).
 - `npm run install:host` — зарегистрировать помощника в Chrome и Firefox (обёртка `host/bin/sverka-host` и манифесты в `NativeMessagingHosts`); `npm run install:host -- --uninstall` — удалить.
 - `npm run build:extension` — собрать расширение: `extension/dist` для Chrome («Загрузить распакованное расширение»), `extension/dist-firefox` для Firefox (`about:debugging` → «Загрузить временное дополнение»).
-- `npm run typecheck` — проверка типов `shared`, `core`, `host`, `extension`.
 - `npm test` — все тесты Vitest (`extension/test` в jsdom, `core/test` и `host/test` в Node). Тесты не вызывают настоящий Claude.
 - `UPDATE_EXPECTED=1 npm test` — перезаписать `fixtures/expected/` фактическим результатом извлечения (только после намеренного изменения алгоритма, дифф проверять вручную). Подробнее — `fixtures/README.md`.
 
