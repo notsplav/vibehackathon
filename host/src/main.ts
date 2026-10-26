@@ -3,16 +3,11 @@
 // Сообщения принимаются только от расширения, указанного в манифесте помощника (allowed_origins).
 
 import { existsSync } from "node:fs";
-import type { ExtractedArticle } from "../../shared/contract.ts";
+import type { HostRequest } from "../../shared/host.ts";
 import { DEFAULT_OPTIONS, type HostEvent, analyze } from "./pipeline.ts";
 import { connect } from "./protocol.ts";
 
 export const HOST_VERSION = 1;
-
-type Incoming =
-  | { type: "ping" }
-  | { type: "analyze"; id: string; article: ExtractedArticle; options?: { extractModel?: string; checkModel?: string; concurrency?: number } }
-  | { type: "cancel"; id: string };
 
 const claudeBin = process.env.CLAUDE_BIN ?? "";
 const running = new Map<string, AbortController>();
@@ -29,7 +24,7 @@ const send = connect(process.stdin, process.stdout, handle, () => {
 });
 
 function handle(raw: unknown): void {
-  const msg = raw as Incoming;
+  const msg = raw as HostRequest;
   if (msg?.type === "ping") {
     send({ type: "pong", version: HOST_VERSION, claudeBin, claudeFound: !!claudeBin && existsSync(claudeBin), defaults: DEFAULT_OPTIONS });
     return;

@@ -3,6 +3,9 @@
 // в расширение по мере готовности; хранит их расширение.
 
 import type { ArticleFocus, Claim, ClaimStatus, ExtractedArticle, LiveProgress } from "../../shared/contract.ts";
+import type { HostEvent } from "../../shared/host.ts";
+
+export type { HostEvent };
 import { checkableBlocks, mergeDuplicates, restrictToFocus, validateClaims, type RawClaim } from "../../core/claims.ts";
 import { type Citation, decideVerdict } from "../../core/evidence.ts";
 import { CHECK_RETRY_PREFIX, CHECK_SCHEMA, CHECK_SYSTEM, EXTRACT_SCHEMA, EXTRACT_SYSTEM, SUMMARY_SYSTEM, checkInput, extractInput, extractSystem } from "../../core/prompts.ts";
@@ -26,14 +29,6 @@ export const DEFAULT_OPTIONS: Omit<AnalyzeOptions, "claudeBin"> = {
   concurrency: 5,
   maxBudgetPerCall: 0.5,
 };
-
-export type HostEvent =
-  | { type: "stage"; id: string; status: "extracting_claims" | "checking" | "completed" | "failed" | "cancelled"; error?: string | null }
-  | { type: "claims"; id: string; claims: Claim[] }
-  | { type: "claim"; id: string; claim: Claim }
-  | { type: "live"; id: string; live: LiveProgress }
-  | { type: "summary"; id: string; summary: string }
-  | { type: "cost"; id: string; usd: number };
 
 export type ClaudeRunner = (o: ClaudeOptions) => Promise<ClaudeResult>;
 
