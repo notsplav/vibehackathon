@@ -1,0 +1,8 @@
+{
+  "name": "@vibehackathon/host",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "install-host": "node scripts/install.ts"
+  }
+}

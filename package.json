@@ -6,11 +6,13 @@
     "node": ">=24"
   },
   "workspaces": [
-    "extension"
+    "extension",
+    "host"
   ],
   "scripts": {
+    "install:host": "node host/scripts/install.ts",
     "build:extension": "npm run build -w extension",
-    "typecheck": "tsc -p shared && tsc -p core && tsc -p extension",
+    "typecheck": "tsc -p shared && tsc -p core && tsc -p host && tsc -p extension",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },
