@@ -1,16 +1,26 @@
-// Сборка расширения в extension/dist для «Загрузить распакованное расширение».
+// Сборка расширения: extension/dist — Chrome, extension/dist-firefox — Firefox. Код общий, отличаются манифест
+// и формат фонового скрипта (service worker в Chrome, обычный скрипт event page в Firefox).
 import { build } from "esbuild";
-import { cpSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { firefoxManifest } from "./scripts/manifest.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const out = join(here, "dist");
-rmSync(out, { recursive: true, force: true });
-mkdirSync(out, { recursive: true });
+const common = { bundle: true, sourcemap: false, legalComments: "none", logLevel: "warning" };
+const baseManifest = JSON.parse(readFileSync(join(here, "static/manifest.json"), "utf8"));
 
-const common = { bundle: true, target: "chrome116", sourcemap: false, legalComments: "none", logLevel: "info" };
-await build({ ...common, entryPoints: [join(here, "src/content/index.ts")], outfile: join(out, "content.js"), format: "iife" });
-await build({ ...common, entryPoints: [join(here, "src/sidepanel/index.ts")], outfile: join(out, "sidepanel.js"), format: "esm" });
-await build({ ...common, entryPoints: [join(here, "src/background.ts")], outfile: join(out, "background.js"), format: "esm" });
-cpSync(join(here, "static"), out, { recursive: true });
+async function target(out, browserTarget, backgroundFormat, manifest) {
+  rmSync(out, { recursive: true, force: true });
+  mkdirSync(out, { recursive: true });
+  const opts = { ...common, target: browserTarget };
+  await build({ ...opts, entryPoints: [join(here, "src/content/index.ts")], outfile: join(out, "content.js"), format: "iife" });
+  await build({ ...opts, entryPoints: [join(here, "src/sidepanel/index.ts")], outfile: join(out, "sidepanel.js"), format: "esm" });
+  await build({ ...opts, entryPoints: [join(here, "src/background.ts")], outfile: join(out, "background.js"), format: backgroundFormat });
+  cpSync(join(here, "static"), out, { recursive: true });
+  writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
+  console.log(`собрано: ${out}`);
+}
+
+await target(join(here, "dist"), "chrome116", "esm", baseManifest);
+await target(join(here, "dist-firefox"), "firefox128", "iife", firefoxManifest(baseManifest));

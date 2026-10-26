@@ -4,5 +4,5 @@
     "lib": ["es2023", "dom", "dom.iterable"],
     "types": ["chrome"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "../shared/**/*.ts"]
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "../shared/**/*.ts"]
 }
