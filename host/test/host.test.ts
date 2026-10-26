@@ -59,8 +59,8 @@ describe("разбор вывода Claude Code", () => {
   });
 
   test("окружение процесса собирается заново: только вход по подписке, без переменных браузера", () => {
-    const env = childEnv({ HOME: "/Users/u", USER: "u", LOGNAME: "u", PATH: "/opt/x", SECRET_TOKEN: "x", LANG: "ru_RU.UTF-8" });
-    expect(env).toEqual({ HOME: "/Users/u", USER: "u", LOGNAME: "u", PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LANG: "ru_RU.UTF-8" });
+    const env = childEnv({ HOME: "/home/u", USER: "u", LOGNAME: "u", PATH: "/opt/x", SECRET_TOKEN: "x", LANG: "ru_RU.UTF-8" });
+    expect(env).toEqual({ HOME: "/home/u", USER: "u", LOGNAME: "u", PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LANG: "ru_RU.UTF-8" });
   });
 });
 
